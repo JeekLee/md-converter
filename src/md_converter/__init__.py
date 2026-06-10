@@ -97,16 +97,25 @@ class MdConverter:
     # ── drawing handling ──────────────────────────────────────────────────────
 
     def _process_drawings(self, md: str) -> str:
-        """Convert ```hwp-drawing blocks to Mermaid via LLM (fallback: drop)."""
+        """Convert ```hwp-drawing blocks.
+
+        Single-label drawing (section header / standalone box): emit as plain text.
+        Multi-label drawing (potential flowchart): attempt Mermaid via LLM, fall back to plain text.
+        """
         pattern = re.compile(r"```hwp-drawing\n(.*?)```", re.DOTALL)
         if not pattern.search(md):
             return md
 
         def _replace(m: re.Match) -> str:
             drawing_text = m.group(1).strip()
+            labels = [l for l in drawing_text.splitlines() if l.strip()]
+            if len(labels) <= 1:
+                # Single label = decorative text box / section banner → plain text
+                return drawing_text
+            # Multiple labels = possible diagram → try Mermaid
             mermaid = drawing_to_mermaid(drawing_text, self._llm)
             if mermaid:
-                sys.stderr.write(f"  drawing → mermaid ({len(drawing_text)} chars)\n")
+                sys.stderr.write(f"  drawing → mermaid ({len(labels)} labels)\n")
                 return f"```mermaid\n{mermaid}\n```"
             return drawing_text
 
