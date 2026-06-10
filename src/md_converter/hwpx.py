@@ -97,6 +97,12 @@ def _bmp_to_png(data: bytes) -> bytes | None:
         return None
 
 
+# Drawing object element tags (direct children of hp:p in HWPX)
+_DRAWING_TAGS = frozenset(
+    _q(t) for t in ("rect", "ellipse", "line", "arc", "polygon", "curve", "container")
+)
+
+
 # ── text helpers ───────────────────────────────────────────────────────────
 
 def _escape_cell(s: str) -> str:
@@ -122,6 +128,26 @@ def _para_text(p: ET.Element) -> str:
             continue
         parts.append(_run_text(run))
     return "".join(parts)
+
+
+def _drawing_texts(p: ET.Element) -> list[str]:
+    """Collect text labels from drawing shape objects (hp:rect, ellipse, …) in a paragraph.
+
+    Drawing shapes contain text via hp:drawText > hp:subList > hp:p.
+    Returns a list of non-empty text strings, one per labeled shape.
+    Returns empty list if the paragraph has no drawing shapes.
+    """
+    texts: list[str] = []
+    for child in p:
+        if child.tag not in _DRAWING_TAGS:
+            continue
+        for draw_text in child.findall(f".//{_q('drawText')}"):
+            for sub in draw_text.findall(_q("subList")):
+                for para in sub.findall(_q("p")):
+                    t = _para_text(para).strip()
+                    if t:
+                        texts.append(t)
+    return texts
 
 
 # ── table helpers ──────────────────────────────────────────────────────────
@@ -234,6 +260,12 @@ def parse(data: bytes) -> tuple[str, list[ImageItem]]:
                             idx = len(images) + 1
                             images.append(ImageItem(idx=idx, data=raw, mime=mime, ext=ext))
                             parts.append(f"[[RHWP_IMAGE:{idx}]]")
+                    continue
+
+                # Drawing shapes (rect, ellipse, line, arc, polygon, curve, container)
+                drawing_labels = _drawing_texts(p)
+                if drawing_labels:
+                    parts.append("```hwp-drawing\n" + "\n".join(drawing_labels) + "\n```")
                     continue
 
                 # Plain text paragraph

@@ -235,23 +235,25 @@ def _parse_section(
     parts: list[str] = []
 
     # Table state — resets on each new table
-    in_table        = False
-    table_ctrl_lvl  = -1   # level of the CTRL_HEADER that opened this table
-    table_col_count = 0    # columns per row (from TABLE_BODY record)
-    table_rows:       list[list[str]] = []
-    current_row:      list[str]       = []
-    current_cell_parts: list[str]     = []
-    in_cell         = False    # True once first LIST_HEADER is seen
-    cells_in_row    = 0        # cells completed in the current row
+    in_table         = False
+    table_ctrl_lvl   = -1   # level of the CTRL_HEADER that opened this table
+    table_col_count  = 0    # from TABLE_BODY; kept for reference
+    table_rows:        list[list[str]] = []
+    current_row:       list[str]       = []
+    current_cell_parts: list[str]      = []
+    in_cell          = False
+    current_row_addr = -1   # rowAddr from LIST_HEADER payload; changes = new row
 
-    # GSO (picture) state
-    in_gso   = False
-    gso_level = -1
+    # GSO (picture / drawing) state
+    in_gso         = False
+    gso_level      = -1
+    gso_text_parts: list[str] = []
+    gso_had_image  = False
 
     def _close_table() -> None:
         nonlocal in_table, table_ctrl_lvl, table_col_count
         nonlocal table_rows, current_row, current_cell_parts
-        nonlocal in_cell, cells_in_row
+        nonlocal in_cell, current_row_addr
         if in_cell:
             current_row.append(" ".join(current_cell_parts))
         if current_row:
@@ -266,7 +268,7 @@ def _parse_section(
         current_row = []
         current_cell_parts = []
         in_cell = False
-        cells_in_row = 0
+        current_row_addr = -1
 
     for tag_id, level, payload in _iter_records(data):
         # ── table end: any record at or above the table's CTRL_HEADER level ──
@@ -279,6 +281,8 @@ def _parse_section(
             if ctrl == _CTRL_GSO:
                 in_gso = True
                 gso_level = level
+                gso_text_parts = []
+                gso_had_image = False
             elif ctrl == _CTRL_TABLE:
                 in_table = True
                 table_ctrl_lvl = level
@@ -287,33 +291,40 @@ def _parse_section(
                 current_row = []
                 current_cell_parts = []
                 in_cell = False
-                cells_in_row = 0
+                current_row_addr = -1
 
         # ── picture: extract image from SHAPE_PICTURE payload ────────────────
         if in_gso and tag_id == _TAG_SHAPE_PICTURE:
             if len(payload) >= _PICTURE_BIN_DATA_ID_OFFSET + 2:
                 bin_data_id = struct.unpack_from("<H", payload, _PICTURE_BIN_DATA_ID_OFFSET)[0]
                 _emit_image(bin_data_id, bin_entries, bin_streams, images, parts)
+            gso_had_image = True
             in_gso = False
+            gso_text_parts = []
 
         if in_gso and level <= gso_level and tag_id != _TAG_CTRL_HEADER:
+            if not gso_had_image and gso_text_parts:
+                drawing_text = "\n".join(gso_text_parts)
+                parts.append(f"```hwp-drawing\n{drawing_text}\n```")
             in_gso = False
+            gso_text_parts = []
+            gso_had_image = False
 
         # ── table: read col count from TABLE_BODY record ─────────────────────
         if in_table and tag_id == _TAG_TABLE_BODY and level == table_ctrl_lvl + 1:
             if len(payload) >= 8:
                 table_col_count = struct.unpack_from("<H", payload, 6)[0]
 
-        # ── table: each LIST_HEADER at ctrl_level+1 starts a new cell ────────
+        # ── table: LIST_HEADER at ctrl_level+1 = new cell; rowAddr change = new row
         elif in_table and tag_id == _TAG_LIST_HEADER and level == table_ctrl_lvl + 1:
+            row_addr = struct.unpack_from("<H", payload, 10)[0] if len(payload) >= 12 else 0
             if in_cell:
                 current_row.append(" ".join(current_cell_parts))
                 current_cell_parts = []
-                cells_in_row += 1
-                if table_col_count > 0 and cells_in_row >= table_col_count:
+                if row_addr != current_row_addr:
                     table_rows.append(current_row)
                     current_row = []
-                    cells_in_row = 0
+            current_row_addr = row_addr
             in_cell = True
 
         # ── text paragraphs ───────────────────────────────────────────────────
@@ -322,7 +333,9 @@ def _parse_section(
             if text:
                 if in_table and in_cell:
                     current_cell_parts.append(text)
-                elif not in_table and not in_gso:
+                elif in_gso:
+                    gso_text_parts.append(text)
+                elif not in_table:
                     parts.append(text)
 
     # flush open table at end of stream

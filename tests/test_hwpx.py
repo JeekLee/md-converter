@@ -8,7 +8,7 @@ from textwrap import dedent
 
 import pytest
 
-from md_converter.hwpx import convert
+from md_converter.hwpx import convert, parse
 
 
 def _make_hwpx(section_xml: str) -> bytes:
@@ -97,6 +97,43 @@ def test_multiple_sections():
     assert "섹션0" in md
     assert "섹션1" in md
     assert md.index("섹션0") < md.index("섹션1")
+
+
+def _rect(text: str) -> str:
+    """Minimal hp:rect with a drawText text box containing one paragraph."""
+    return (
+        f'<hp:rect>'
+        f'<hp:drawText>'
+        f'<hp:subList><hp:p><hp:run><hp:t>{text}</hp:t></hp:run></hp:p></hp:subList>'
+        f'</hp:drawText>'
+        f'</hp:rect>'
+    )
+
+
+def test_drawing_shapes_collected():
+    """Paragraphs containing hp:rect shapes emit a ```hwp-drawing block."""
+    xml = _sec(
+        f'<hp:p>{_rect("시작")}</hp:p>',
+        f'<hp:p>{_rect("처리")}{_rect("검토")}</hp:p>',
+        _p(_run("일반 텍스트")),
+    )
+    md, _ = parse(_make_hwpx(xml))
+    assert "```hwp-drawing" in md
+    assert "시작" in md
+    assert "처리" in md
+    assert "검토" in md
+    assert "일반 텍스트" in md
+
+
+def test_drawing_without_text_ignored():
+    """A shape with no drawText produces no hwp-drawing block."""
+    xml = _sec(
+        f'<hp:p><hp:rect></hp:rect></hp:p>',
+        _p(_run("텍스트")),
+    )
+    md, _ = parse(_make_hwpx(xml))
+    assert "hwp-drawing" not in md
+    assert "텍스트" in md
 
 
 def test_real_hira_hwpx(tmp_path):
