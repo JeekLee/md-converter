@@ -7,7 +7,7 @@ HWP5 structure (OLE compound file):
   BodyText/Section0  — HWPF record stream for each section
   BodyText/Section1
   ...
-  BinData/BIN*.{jpg,png,...}   — embedded images (not extracted here)
+  BinData/BIN*.{jpg,png,...}   — embedded images
 
 Each BodyText stream is optionally zlib-compressed and consists of a sequence
 of HWPF records:
@@ -238,12 +238,12 @@ def _section_streams(ole: "olefile.OleFileIO") -> list[str]:
     return sorted(streams, key=lambda s: int(re.search(r"\d+", s.split("/")[1]).group()))
 
 
-# ── public entry ───────────────────────────────────────────────────────────
+# ── public entries ─────────────────────────────────────────────────────────
 
-def convert(data: bytes) -> str:
-    """Convert HWP5 bytes to Markdown.
+def parse(data: bytes) -> tuple[str, list]:
+    """Convert HWP5 bytes to (markdown_with_placeholders, image_list).
 
-    Images are omitted (text-only). Tables are rendered as GFM tables.
+    HWP5 image extraction is not yet implemented; image_list is always empty.
     Requires the 'olefile' package.
     """
     import io as _io
@@ -261,4 +261,15 @@ def convert(data: bytes) -> str:
     finally:
         ole.close()
 
-    return "\n\n".join(parts)
+    return "\n\n".join(parts), []
+
+
+def convert(data: bytes) -> str:
+    """Convert HWP5 bytes to Markdown (text + tables; images dropped).
+
+    For full pipeline with image upload and LLM table restructuring,
+    use md_converter.convert() instead.
+    Requires the 'olefile' package.
+    """
+    md, _ = parse(data)
+    return md

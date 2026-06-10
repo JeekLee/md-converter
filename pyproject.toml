@@ -9,8 +9,9 @@ license = { text = "MIT" }
 # HWPX has no runtime deps (stdlib only).
 # HWP5 requires olefile for OLE compound-file reading.
 [project.optional-dependencies]
-hwp5 = ["olefile>=0.47"]
-dev  = ["pytest>=8", "olefile>=0.47"]
+hwp5   = ["olefile>=0.47"]
+images = ["Pillow>=10.0"]          # BMP → PNG conversion
+dev    = ["pytest>=8", "olefile>=0.47", "Pillow>=10.0"]
 
 [build-system]
 requires = ["hatchling"]
