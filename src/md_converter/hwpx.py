@@ -140,30 +140,42 @@ def _cell_plain_text(tc: ET.Element) -> str:
 
 
 def _cell_text(tc: ET.Element) -> str:
-    """Text from hp:tc, expanding any nested table as [[NT:r0c0|c1;r1c0|c1]]."""
+    """Text from hp:tc, expanding nested tables as [[NT:r0c0|c1;r1c0|c1]].
+
+    Paragraphs (including NT markers) are joined with ' <br> ' to preserve
+    multi-paragraph cell content in GFM tables.
+    """
     sub = tc.find(_q("subList"))
     if sub is None:
         return ""
-    nested_tbl = sub.find(f".//{_q('tbl')}")
-    if nested_tbl is not None:
-        rows = []
-        for tr in nested_tbl.findall(_q("tr")):
-            row = "|".join(_cell_plain_text(tc2) for tc2 in tr.findall(_q("tc")))
-            rows.append(row)
-        return "[[NT:" + ";".join(rows) + "]]"
     parts = []
     for p in sub.findall(_q("p")):
-        t = _para_text(p).strip()
-        if t:
-            parts.append(t)
-    return " ".join(parts)
+        tbl = p.find(f".//{_q('tbl')}")
+        if tbl is not None:
+            rows = []
+            for tr in tbl.findall(_q("tr")):
+                row = "|".join(_cell_plain_text(tc2) for tc2 in tr.findall(_q("tc")))
+                rows.append(row)
+            parts.append("[[NT:" + ";".join(rows) + "]]")
+        else:
+            t = _para_text(p).strip()
+            if t:
+                parts.append(t)
+    return " <br> ".join(parts)
+
+
+def _escape_cell_for_table(s: str) -> str:
+    """Escape | for GFM, but leave [[NT:...]] markers intact (LLM handles escaping later)."""
+    if "[[NT:" in s:
+        return s
+    return _escape_cell(s)
 
 
 def _table_to_md(tbl: ET.Element) -> str:
     """Convert hp:tbl to a GFM table string."""
     rows: list[list[str]] = []
     for tr in tbl.findall(_q("tr")):
-        rows.append([_escape_cell(_cell_text(tc)) for tc in tr.findall(_q("tc"))])
+        rows.append([_escape_cell_for_table(_cell_text(tc)) for tc in tr.findall(_q("tc"))])
     if not rows:
         return ""
     col_count = max(len(r) for r in rows)
