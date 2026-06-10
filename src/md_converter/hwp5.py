@@ -4,24 +4,25 @@ Requires: pip install olefile  (or: pip install "md-converter[hwp5]")
 
 HWP5 structure (OLE compound file):
   FileHeader         — version + property flags (bit 0: compressed)
+  DocInfo            — document metadata including BinData table
   BodyText/Section0  — HWPF record stream for each section
   BodyText/Section1
   ...
-  BinData/BIN*.{jpg,png,...}   — embedded images
+  BinData/BIN*.{ext}   — embedded images
 
-Each BodyText stream is optionally zlib-compressed and consists of a sequence
-of HWPF records:
+HWPF record header (32-bit LE):
+  bits  0-9  : tag_id  (10 bits)
+  bits 10-19 : level   (10 bits, 0 = top-level)
+  bits 20-31 : size    (12 bits; if 0xFFF → read next 4 bytes as actual size)
 
-  [4-byte header: tag_id(10) | level(2) | size(20)]   ← little-endian uint32
-  [payload: size bytes]
-  (if size == 0xFFFFF → read next 4 bytes as actual size)
-
-Mirrors rhwp's extract_document_markdown_with_images_native logic.
+BodyText/DocInfo streams are compressed with raw deflate (wbits=-15).
 """
 from __future__ import annotations
 
+import re
 import struct
 import zlib
+from dataclasses import dataclass, field
 from typing import Generator
 
 try:
@@ -32,29 +33,53 @@ except ModuleNotFoundError as exc:
         "Install with: pip install 'md-converter[hwp5]'"
     ) from exc
 
-# ── HWPF tag IDs (from HWP5 open format spec v5.0) ───────────────────────
-_TAG_PARA_HEADER = 0x42   # 66  — paragraph header (char count, control count…)
-_TAG_PARA_TEXT = 0x43     # 67  — paragraph text body (UTF-16LE)
-_TAG_CTRL_HEADER = 0x47   # 71  — inline control (table, picture, …)
-_TAG_LIST_HEADER = 0x48   # 72  — cell / list context header
-_TAG_TABLE = 0x54         # 84  — table property record (inside CTRL_HEADER group)
+# ── HWPF tag IDs (HWPTAG_BEGIN=0x10, offsets from spec) ──────────────────────
+_TAG_BIN_DATA      = 0x12  # 18  — DocInfo: binary data entry
+_TAG_PARA_HEADER   = 0x42  # 66  — paragraph header
+_TAG_PARA_TEXT     = 0x43  # 67  — paragraph text body (UTF-16LE)
+_TAG_CTRL_HEADER   = 0x47  # 71  — inline control (table, picture, …)
+_TAG_LIST_HEADER   = 0x48  # 72  — cell boundary inside a table
+_TAG_SHAPE_PICTURE = 0x55  # 85  — picture shape data (bin_data_id at offset 71)
 
-# Control ID for a table object stored in CTRL_HEADER payload bytes 0-3
-_CTRL_TABLE = b"tble"
+# Control IDs stored as LE DWORD in CTRL_HEADER payload bytes 0-3.
+# ctrl_id(s) = big-endian ASCII → stored as LE bytes in the file.
+# e.g. ctrl_id("tbl ") = 0x74626C20 → file bytes [0x20,0x6C,0x62,0x74] = b" lbt"
+_CTRL_TABLE = b" lbt"   # ctrl_id(b"tbl ")
+_CTRL_GSO   = b" osg"   # ctrl_id(b"gso ") — General Shape Object (picture)
 
-# ── record iterator ────────────────────────────────────────────────────────
+# Offset of bin_data_id (u16) inside a TAG_SHAPE_PICTURE payload
+_PICTURE_BIN_DATA_ID_OFFSET = 71
+
+
+# ── image item ────────────────────────────────────────────────────────────────
+
+@dataclass
+class ImageItem:
+    idx: int        # 1-based — matches [[RHWP_IMAGE:{idx}]] token
+    data: bytes
+    mime: str
+    ext: str
+
+
+# ── record iterator ────────────────────────────────────────────────────────────
 
 def _iter_records(data: bytes) -> Generator[tuple[int, int, bytes], None, None]:
-    """Yield (tag_id, level, payload) for each HWPF record in *data*."""
+    """Yield (tag_id, level, payload) for each HWPF record in *data*.
+
+    Record header layout (32-bit LE):
+      bits  0-9  : tag_id
+      bits 10-19 : level
+      bits 20-31 : size  (0xFFF = extended; next 4 bytes = actual size)
+    """
     offset = 0
     length = len(data)
     while offset + 4 <= length:
         header = struct.unpack_from("<I", data, offset)[0]
         offset += 4
         tag_id = header & 0x3FF
-        level = (header >> 10) & 0x3
-        size = header >> 12  # 20-bit field; max value 0xFFFFF
-        if size == 0xFFFFF:
+        level  = (header >> 10) & 0x3FF
+        size   = (header >> 20) & 0xFFF
+        if size == 0xFFF:
             if offset + 4 > length:
                 break
             size = struct.unpack_from("<I", data, offset)[0]
@@ -64,18 +89,23 @@ def _iter_records(data: bytes) -> Generator[tuple[int, int, bytes], None, None]:
         yield tag_id, level, payload
 
 
-# ── section-stream decoder ─────────────────────────────────────────────────
+# ── decompression ─────────────────────────────────────────────────────────────
+
+def _decompress(raw: bytes) -> bytes:
+    """Raw deflate (HWP5 standard), fallback to standard zlib."""
+    try:
+        return zlib.decompress(raw, -15)
+    except zlib.error:
+        return zlib.decompress(raw)
+
 
 def _decode_stream(raw: bytes, compressed: bool) -> bytes:
     if not compressed:
         return raw
-    return zlib.decompress(raw)
+    return _decompress(raw)
 
 
-# ── markdown helpers (same logic as hwpx.py) ──────────────────────────────
-
-import re
-
+# ── markdown helpers (same logic as hwpx.py) ──────────────────────────────────
 
 def _escape_cell(s: str) -> str:
     return re.sub(r"\s+", " ", s.replace("|", "\\|")).strip()
@@ -95,133 +125,270 @@ def _table_to_md(rows: list[list[str]]) -> str:
     return "\n".join(lines)
 
 
-# ── section parser ─────────────────────────────────────────────────────────
+# ── DocInfo BinData table ─────────────────────────────────────────────────────
 
-def _parse_section(data: bytes) -> list[str]:
+def _read_hwp_string(data: bytes, offset: int) -> tuple[str, int]:
+    """Read a HWP length-prefixed UTF-16LE string. Returns (text, new_offset)."""
+    if offset + 2 > len(data):
+        return "", offset
+    length = struct.unpack_from("<H", data, offset)[0]
+    offset += 2
+    byte_len = length * 2
+    if offset + byte_len > len(data):
+        return "", offset + byte_len
+    text = data[offset : offset + byte_len].decode("utf-16-le", errors="replace")
+    return text, offset + byte_len
+
+
+@dataclass
+class _BinEntry:
+    storage_id: int
+    ext: str
+
+
+def _parse_doc_info_bin_data(ole: "olefile.OleFileIO", compressed: bool) -> dict[int, _BinEntry]:
+    """Parse DocInfo stream → {1-based bin_data_id: _BinEntry(storage_id, ext)}."""
+    if not ole.exists("DocInfo"):
+        return {}
+    raw = ole.openstream("DocInfo").read()
+    data = _decode_stream(raw, compressed)
+
+    entries: dict[int, _BinEntry] = {}
+    seq = 1
+    for tag_id, _level, payload in _iter_records(data):
+        if tag_id != _TAG_BIN_DATA:
+            continue
+        if len(payload) < 4:
+            seq += 1
+            continue
+        attr = struct.unpack_from("<H", payload, 0)[0]
+        data_type = attr & 0x0F  # bits 0-3: 0=Link, 1=Embedding, 2=Storage
+        if data_type in (1, 2):  # Embedding or Storage
+            storage_id = struct.unpack_from("<H", payload, 2)[0]
+            ext, _ = _read_hwp_string(payload, 4)
+            entries[seq] = _BinEntry(storage_id=storage_id, ext=ext.lower())
+        seq += 1
+    return entries
+
+
+# ── BinData stream loader ─────────────────────────────────────────────────────
+
+def _load_bin_data(ole: "olefile.OleFileIO", compressed: bool) -> dict[int, tuple[bytes, str]]:
+    """Read all BinData streams → {storage_id: (data, ext)}.
+
+    Streams are named BIN{N:04d}.{ext} or BIN{N:04X}.{ext}.
+    When compressed=True the streams are raw-deflated (same flag as BodyText).
+    """
+    result: dict[int, tuple[bytes, str]] = {}
+    for entry in ole.listdir(streams=True):
+        if entry[0] != "BinData":
+            continue
+        name = entry[1]  # e.g. "BIN0001.png"
+        m = re.match(r"BIN([0-9A-Fa-f]{4})\.(\w+)$", name, re.IGNORECASE)
+        if not m:
+            continue
+        stream_id = int(m.group(1), 16)  # covers both decimal (0001→1) and hex
+        ext = m.group(2).lower()
+        path = f"BinData/{name}"
+        try:
+            raw = ole.openstream(path).read()
+            data = _decode_stream(raw, compressed)
+            result[stream_id] = (data, ext)
+        except Exception:
+            pass
+    return result
+
+
+# ── MIME helpers ──────────────────────────────────────────────────────────────
+
+def _detect_mime(data: bytes) -> str:
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:4] in (b"GIF8", b"GIF9"):
+        return "image/gif"
+    if data[:2] == b"BM":
+        return "image/bmp"
+    return "application/octet-stream"
+
+
+def _mime_to_ext(mime: str) -> str:
+    return {"image/png": "png", "image/jpeg": "jpg",
+            "image/gif": "gif", "image/bmp": "bmp"}.get(mime, "bin")
+
+
+# TAG_TABLE (0x4D=77) is the table-body record inside a CTRL_HEADER table group.
+# It carries row/col counts at bytes 4-7.
+_TAG_TABLE_BODY = 0x4D
+
+
+# ── section parser ─────────────────────────────────────────────────────────────
+
+def _parse_section(
+    data: bytes,
+    bin_entries: dict[int, _BinEntry],
+    bin_streams: dict[int, tuple[bytes, str]],
+    images: list[ImageItem],
+) -> list[str]:
     """Parse one BodyText section stream into a list of markdown blocks."""
     parts: list[str] = []
 
-    # State machine: we track nesting level to associate PARA_TEXT with
-    # their context (top-level paragraph vs table cell).
-    #
-    # level 0: section root
-    # level 1: top-level paragraphs / controls
-    # level 2: inside a control (table rows, etc.)
-    # level 3: table cells (LIST_HEADER contexts)
-    # level 4: paragraphs inside cells
-    #
-    # We collect PARA_TEXT at top level as paragraph blocks,
-    # and accumulate table structure when inside a table control.
+    # Table state — resets on each new table
+    in_table        = False
+    table_ctrl_lvl  = -1   # level of the CTRL_HEADER that opened this table
+    table_col_count = 0    # columns per row (from TABLE_BODY record)
+    table_rows:       list[list[str]] = []
+    current_row:      list[str]       = []
+    current_cell_parts: list[str]     = []
+    in_cell         = False    # True once first LIST_HEADER is seen
+    cells_in_row    = 0        # cells completed in the current row
 
-    in_table = False
-    table_rows: list[list[str]] = []
-    current_row: list[str] = []
-    current_cell_parts: list[str] = []
-    cell_depth = 0  # how many LIST_HEADER levels deep we are
+    # GSO (picture) state
+    in_gso   = False
+    gso_level = -1
 
-    prev_level = 0
-
-    for tag_id, level, payload in _iter_records(data):
-        if tag_id == _TAG_CTRL_HEADER and level == 1:
-            ctrl_id = payload[:4] if len(payload) >= 4 else b""
-            if ctrl_id == _CTRL_TABLE:
-                in_table = True
-                table_rows = []
-                current_row = []
-                current_cell_parts = []
-                cell_depth = 0
-
-        elif tag_id == _TAG_LIST_HEADER and in_table:
-            if level == 3:
-                # New row: flush previous row when we move from one row to the next
-                # (rows start at level 2 via a separate tr record; cells at level 3)
-                # Simplified: treat each LIST_HEADER at level 3 as a new cell.
-                current_cell_parts = []
-                cell_depth += 1
-            elif level == 2:
-                # Row-level list header — flush previous row's last cell and start row
-                if current_cell_parts or current_row:
-                    if current_cell_parts:
-                        current_row.append(" ".join(current_cell_parts))
-                        current_cell_parts = []
-                    if current_row:
-                        table_rows.append(current_row)
-                current_row = []
-                cell_depth = 0
-
-        elif tag_id == _TAG_PARA_TEXT:
-            text = _para_text_from_payload(payload)
-            if not text:
-                continue
-            if in_table and cell_depth > 0:
-                current_cell_parts.append(text)
-            elif in_table and cell_depth == 0:
-                pass  # para before first cell — skip
-            else:
-                # Top-level paragraph
-                parts.append(text)
-
-        elif tag_id == _TAG_PARA_HEADER and level == 1 and in_table:
-            # Entering a new cell paragraph at the cell level
-            pass
-
-        # Detect end of table: when we return to level 1 with a non-table tag
-        # after having been in a table.
-        if in_table and level == 1 and tag_id not in (
-            _TAG_CTRL_HEADER,
-            _TAG_LIST_HEADER,
-            _TAG_PARA_HEADER,
-            _TAG_PARA_TEXT,
-            _TAG_TABLE,
-        ):
-            # Flush last cell and row
-            if current_cell_parts:
-                current_row.append(" ".join(current_cell_parts))
-                current_cell_parts = []
-            if current_row:
-                table_rows.append(current_row)
-            md = _table_to_md(table_rows)
-            if md:
-                parts.append(md)
-            in_table = False
-            table_rows = []
-            current_row = []
-
-        prev_level = level
-
-    # Flush in case the table is the last element in the section
-    if in_table:
-        if current_cell_parts:
+    def _close_table() -> None:
+        nonlocal in_table, table_ctrl_lvl, table_col_count
+        nonlocal table_rows, current_row, current_cell_parts
+        nonlocal in_cell, cells_in_row
+        if in_cell:
             current_row.append(" ".join(current_cell_parts))
         if current_row:
             table_rows.append(current_row)
         md = _table_to_md(table_rows)
         if md:
             parts.append(md)
+        in_table = False
+        table_ctrl_lvl = -1
+        table_col_count = 0
+        table_rows = []
+        current_row = []
+        current_cell_parts = []
+        in_cell = False
+        cells_in_row = 0
+
+    for tag_id, level, payload in _iter_records(data):
+        # ── table end: any record at or above the table's CTRL_HEADER level ──
+        if in_table and level <= table_ctrl_lvl:
+            _close_table()
+
+        # ── control header dispatch ───────────────────────────────────────────
+        if tag_id == _TAG_CTRL_HEADER:
+            ctrl = payload[:4] if len(payload) >= 4 else b""
+            if ctrl == _CTRL_GSO:
+                in_gso = True
+                gso_level = level
+            elif ctrl == _CTRL_TABLE:
+                in_table = True
+                table_ctrl_lvl = level
+                table_col_count = 0
+                table_rows = []
+                current_row = []
+                current_cell_parts = []
+                in_cell = False
+                cells_in_row = 0
+
+        # ── picture: extract image from SHAPE_PICTURE payload ────────────────
+        if in_gso and tag_id == _TAG_SHAPE_PICTURE:
+            if len(payload) >= _PICTURE_BIN_DATA_ID_OFFSET + 2:
+                bin_data_id = struct.unpack_from("<H", payload, _PICTURE_BIN_DATA_ID_OFFSET)[0]
+                _emit_image(bin_data_id, bin_entries, bin_streams, images, parts)
+            in_gso = False
+
+        if in_gso and level <= gso_level and tag_id != _TAG_CTRL_HEADER:
+            in_gso = False
+
+        # ── table: read col count from TABLE_BODY record ─────────────────────
+        if in_table and tag_id == _TAG_TABLE_BODY and level == table_ctrl_lvl + 1:
+            if len(payload) >= 8:
+                table_col_count = struct.unpack_from("<H", payload, 6)[0]
+
+        # ── table: each LIST_HEADER at ctrl_level+1 starts a new cell ────────
+        elif in_table and tag_id == _TAG_LIST_HEADER and level == table_ctrl_lvl + 1:
+            if in_cell:
+                current_row.append(" ".join(current_cell_parts))
+                current_cell_parts = []
+                cells_in_row += 1
+                if table_col_count > 0 and cells_in_row >= table_col_count:
+                    table_rows.append(current_row)
+                    current_row = []
+                    cells_in_row = 0
+            in_cell = True
+
+        # ── text paragraphs ───────────────────────────────────────────────────
+        elif tag_id == _TAG_PARA_TEXT:
+            text = _para_text_from_payload(payload)
+            if text:
+                if in_table and in_cell:
+                    current_cell_parts.append(text)
+                elif not in_table and not in_gso:
+                    parts.append(text)
+
+    # flush open table at end of stream
+    if in_table:
+        _close_table()
 
     return parts
 
 
+def _emit_image(
+    bin_data_id: int,
+    bin_entries: dict[int, _BinEntry],
+    bin_streams: dict[int, tuple[bytes, str]],
+    images: list[ImageItem],
+    parts: list[str],
+) -> None:
+    """Resolve bin_data_id → BinData stream → append ImageItem and placeholder."""
+    # Resolve via DocInfo BinData table
+    entry = bin_entries.get(bin_data_id)
+    if entry is not None:
+        stream_data = bin_streams.get(entry.storage_id)
+    else:
+        # Fallback: storage_id == bin_data_id directly
+        stream_data = bin_streams.get(bin_data_id)
+
+    if stream_data is None:
+        return
+
+    raw_data, ext_from_name = stream_data
+    mime = _detect_mime(raw_data)
+    ext = _mime_to_ext(mime) if mime != "application/octet-stream" else ext_from_name
+
+    idx = len(images) + 1
+    images.append(ImageItem(idx=idx, data=raw_data, mime=mime, ext=ext))
+    parts.append(f"[[RHWP_IMAGE:{idx}]]")
+
+
+# ── text decoder ──────────────────────────────────────────────────────────────
+
 def _para_text_from_payload(payload: bytes) -> str:
-    """Decode PARA_TEXT payload: UTF-16LE, filter HWP control chars."""
+    """Decode PARA_TEXT payload: UTF-16LE, skip inline controls.
+
+    HWPF inline controls occupy exactly 8 UTF-16 chars: the control char
+    (U+0001–U+001F) followed by 7 parameter chars that must be skipped.
+    """
     if len(payload) % 2 != 0:
         payload = payload[:-1]
     try:
-        text = payload.decode("utf-16-le")
+        chars = list(payload.decode("utf-16-le"))
     except UnicodeDecodeError:
         return ""
-    # Filter control chars ≤ U+001F (HWP inline-object placeholders)
-    return "".join(c for c in text if c > "").strip()
+    result = []
+    i = 0
+    while i < len(chars):
+        c = chars[i]
+        if "\x01" <= c <= "\x1f":
+            i += 8  # skip control char + 7 parameter chars
+        else:
+            result.append(c)
+            i += 1
+    return "".join(result).strip()
 
 
-# ── file header ────────────────────────────────────────────────────────────
-
-_HWP5_SIGNATURE = b"HWP Document File\x00"
-_HWP5_SIGNATURE_LEN = 32  # padded to 32 bytes in the file
-
+# ── file header ────────────────────────────────────────────────────────────────
 
 def _read_flags(ole: "olefile.OleFileIO") -> int:
-    """Read the 4-byte property flags from FileHeader (offset 36)."""
     data = ole.openstream("FileHeader").read()
     if len(data) < 40:
         return 0
@@ -229,7 +396,6 @@ def _read_flags(ole: "olefile.OleFileIO") -> int:
 
 
 def _section_streams(ole: "olefile.OleFileIO") -> list[str]:
-    """Return sorted BodyText/Section* stream paths."""
     streams = [
         "/".join(entry)
         for entry in ole.listdir(streams=True)
@@ -238,38 +404,42 @@ def _section_streams(ole: "olefile.OleFileIO") -> list[str]:
     return sorted(streams, key=lambda s: int(re.search(r"\d+", s.split("/")[1]).group()))
 
 
-# ── public entries ─────────────────────────────────────────────────────────
+# ── public entries ─────────────────────────────────────────────────────────────
 
-def parse(data: bytes) -> tuple[str, list]:
+def parse(data: bytes) -> tuple[str, list[ImageItem]]:
     """Convert HWP5 bytes to (markdown_with_placeholders, image_list).
 
-    HWP5 image extraction is not yet implemented; image_list is always empty.
     Requires the 'olefile' package.
     """
     import io as _io
 
     ole = olefile.OleFileIO(_io.BytesIO(data))
     try:
-        flags = _read_flags(ole)
+        flags      = _read_flags(ole)
         compressed = bool(flags & 0x1)
 
+        bin_entries = _parse_doc_info_bin_data(ole, compressed)
+        bin_streams = _load_bin_data(ole, compressed)
+
+        images: list[ImageItem] = []
         parts: list[str] = []
         for stream_name in _section_streams(ole):
             raw = ole.openstream(stream_name).read()
             decoded = _decode_stream(raw, compressed)
-            parts.extend(_parse_section(decoded))
+            parts.extend(_parse_section(decoded, bin_entries, bin_streams, images))
     finally:
         ole.close()
 
-    return "\n\n".join(parts), []
+    return "\n\n".join(parts), images
 
 
 def convert(data: bytes) -> str:
     """Convert HWP5 bytes to Markdown (text + tables; images dropped).
 
-    For full pipeline with image upload and LLM table restructuring,
+    For full pipeline with image upload and LLM restructuring,
     use md_converter.convert() instead.
     Requires the 'olefile' package.
     """
     md, _ = parse(data)
-    return md
+    md = re.sub(r"\[\[RHWP_IMAGE:\d+\]\]\n?\n?", "", md)
+    return md.strip()
