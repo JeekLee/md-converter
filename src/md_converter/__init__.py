@@ -17,8 +17,10 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from .hwp import ImageItem, parse_hwp5 as _hwp5_parse, parse_hwpx as _hwpx_parse
+from ._common import ImageItem
+from .hwp import parse_hwp5 as _hwp5_parse, parse_hwpx as _hwpx_parse
 from .llm import LlmConfig, drawing_to_mermaid, restructure_nested_tables
+from .pdf import parse as _pdf_parse
 from .s3 import S3Config, put_object
 
 
@@ -83,8 +85,10 @@ class MdConverter:
             md, image_items = _hwpx_parse(data)
         elif s == ".hwp":
             md, image_items = _hwp5_parse(data)
+        elif s == ".pdf":
+            md, image_items = _pdf_parse(data)
         else:
-            raise ValueError(f"Unsupported format: {ext!r} (expected '.hwp' or '.hwpx')")
+            raise ValueError(f"Unsupported format: {ext!r} (expected '.hwp', '.hwpx', or '.pdf')")
 
         md = self._process_images(md, image_items)
         md = self._process_drawings(md)

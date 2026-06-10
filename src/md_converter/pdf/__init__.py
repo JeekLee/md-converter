@@ -1,1 +1,4 @@
-"""PDF → Markdown converter (not yet implemented)."""
+"""PDF → Markdown converter (pdfplumber-based)."""
+from ._pdf import parse
+
+__all__ = ["parse"]

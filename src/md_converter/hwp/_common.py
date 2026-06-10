@@ -1,12 +1,4 @@
-"""Shared types for HWP5 and HWPX parsers."""
-from __future__ import annotations
+"""Re-export ImageItem from the top-level shared module."""
+from .._common import ImageItem
 
-from dataclasses import dataclass
-
-
-@dataclass
-class ImageItem:
-    idx: int    # 1-based — matches [[RHWP_IMAGE:{idx}]] token
-    data: bytes
-    mime: str
-    ext: str
+__all__ = ["ImageItem"]
