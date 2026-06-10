@@ -11,7 +11,7 @@ pytest.importorskip("olefile")
 
 import struct as _struct
 
-from md_converter.hwp5 import (
+from md_converter.hwp.hwp5 import (
     _decompress,
     _iter_records,
     _para_text_from_payload,

@@ -12,8 +12,9 @@ from __future__ import annotations
 import io
 import re
 import zipfile
-from dataclasses import dataclass, field
 from xml.etree import ElementTree as ET
+
+from ._common import ImageItem
 
 _HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 _OPF = "http://www.idpf.org/2007/opf/"
@@ -21,16 +22,6 @@ _OPF = "http://www.idpf.org/2007/opf/"
 
 def _q(local: str) -> str:
     return f"{{{_HP}}}{local}"
-
-
-# ── image item ─────────────────────────────────────────────────────────────
-
-@dataclass
-class ImageItem:
-    idx: int        # 1-based — matches [[RHWP_IMAGE:{idx}]] token
-    data: bytes
-    mime: str       # "image/png", "image/jpeg", …
-    ext: str        # "png", "jpg", …
 
 
 # ── ZIP helpers ────────────────────────────────────────────────────────────

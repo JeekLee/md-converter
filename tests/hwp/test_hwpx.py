@@ -8,7 +8,7 @@ from textwrap import dedent
 
 import pytest
 
-from md_converter.hwpx import convert, parse
+from md_converter.hwp.hwpx import convert, parse
 
 
 def _make_hwpx(section_xml: str) -> bytes:
