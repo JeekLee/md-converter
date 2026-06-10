@@ -8,10 +8,11 @@ Ports the document-level traversal logic from [rhwp](https://github.com/JeekLee/
 
 - **HWPX** parsing — pure stdlib, zero runtime dependencies
 - **HWP5** (binary OLE) parsing — requires `olefile`
-- Tables → GFM tables; multi-paragraph cells joined with `<br>`
+- Tables → GFM tables; multi-paragraph cells joined with space
 - Nested tables → LLM restructuring via any OpenAI-compatible endpoint
-- Image extraction from HWPX (PNG / JPEG / GIF / BMP→PNG via Pillow)
+- Image extraction from HWP5 and HWPX (PNG / JPEG / GIF / BMP→PNG via Pillow)
 - Image upload to S3 / MinIO via AWS Signature V4 (no boto3)
+- Image save to local directory
 
 ## Install
 
@@ -29,36 +30,68 @@ pip install "md-converter[images]"
 ## Usage
 
 ```python
-from pathlib import Path
-from md_converter import convert, S3Config, LlmConfig
+from md_converter import MdConverter, S3Config, LocalImages, LlmConfig
 
-s3 = S3Config(
-    endpoint   = "http://localhost:9000",
-    bucket     = "my-bucket",
-    access_key = "minioadmin",
-    secret_key = "minioadmin",
-    prefix     = "docs",        # optional key prefix
+converter = MdConverter(
+    images=LocalImages("output/images"),  # save images locally
+    llm=LlmConfig(
+        url="http://localhost:10080/v1",
+        api_key="sk-...",
+        model="qwen3-vl-30b-a3b",
+    ),
 )
 
-llm = LlmConfig(
-    url     = "http://localhost:10080/v1",  # OpenAI-compatible endpoint
-    api_key = "sk-...",
-    model   = "qwen3-vl-30b-a3b",
-)
-
-data = Path("document.hwpx").read_bytes()  # or .hwp
-md   = convert(data, ".hwpx", s3, llm)
+md = converter.convert("document.hwp")   # file path
+md = converter.convert("document.hwpx")
+md = converter.convert(raw_bytes, suffix=".hwp")  # bytes
 ```
 
-`suffix` is `".hwpx"` or `".hwp"` (case-insensitive). Both formats go through the same entry point.
+## Image backends
 
-### What `convert()` does
+### Local directory
 
-1. **Parse** — extracts paragraphs, GFM tables, and image placeholders (`[[RHWP_IMAGE:N]]`) from the document
-2. **Upload images** — each extracted image is PUT to S3/MinIO and the placeholder is replaced with `![image N](s3://bucket/key)`
-3. **Restructure nested tables** — cells that contain a nested table are serialized as `[[NT:row1c1|c2;row2c1|c2]]` and sent to the LLM, which rewrites them as natural prose with `<br>` line breaks
+```python
+converter = MdConverter(images=LocalImages("images"))
+```
 
-### S3Config
+Images are written to `images/img0001.png`, `images/img0002.jpg`, etc.
+The markdown embeds them as `![image 1](images/img0001.png)`.
+Set `dir` relative to wherever you intend to write the markdown file.
+
+### S3 / MinIO
+
+```python
+converter = MdConverter(
+    images=S3Config(
+        endpoint   = "http://localhost:9000",
+        bucket     = "my-bucket",
+        access_key = "minioadmin",
+        secret_key = "minioadmin",
+        prefix     = "docs",        # optional key prefix
+    )
+)
+```
+
+Images are uploaded and embedded as `![image 1](s3://bucket/key)`.
+Signing uses AWS Signature Version 4 via stdlib `hmac` + `hashlib` — no boto3 required.
+
+### Drop images (default)
+
+```python
+converter = MdConverter()  # images=None
+```
+
+Image placeholders are removed from the output.
+
+## Config reference
+
+### `LocalImages`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `dir` | `str \| Path` | Directory for saved image files |
+
+### `S3Config`
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -69,9 +102,7 @@ md   = convert(data, ".hwpx", s3, llm)
 | `prefix` | `str` | `""` | Optional key prefix |
 | `region` | `str` | `"us-east-1"` | AWS region |
 
-Signing uses AWS Signature Version 4 via stdlib `hmac` + `hashlib` — no boto3 required. Always uses path-style URLs, which is required for MinIO.
-
-### LlmConfig
+### `LlmConfig`
 
 | Field | Type | Description |
 | --- | --- | --- |
@@ -80,8 +111,4 @@ Signing uses AWS Signature Version 4 via stdlib `hmac` + `hashlib` — no boto3 
 | `model` | `str` | Model ID |
 
 On LLM failure the flat `[[NT:...]]` content is kept as a fallback.
-
-## Notes
-
-- **Image support**: HWPX only. HWP5 image extraction is not yet implemented.
-- **Dependencies**: `olefile` for HWP5; `Pillow` for BMP→PNG. HWPX text+tables has zero extra dependencies.
+If `llm=None` (default), nested-table markers are left as-is in the output.
