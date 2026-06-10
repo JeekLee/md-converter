@@ -34,14 +34,12 @@ except ModuleNotFoundError as exc:
     ) from exc
 
 # ── HWPF tag IDs (HWPTAG_BEGIN=0x10, offsets from spec) ──────────────────────
-_TAG_BIN_DATA          = 0x12  # 18  — DocInfo: binary data entry
-_TAG_PARA_HEADER       = 0x42  # 66  — paragraph header
-_TAG_PARA_TEXT         = 0x43  # 67  — paragraph text body (UTF-16LE)
-_TAG_CTRL_HEADER       = 0x47  # 71  — inline control (table, picture, …)
-_TAG_LIST_HEADER       = 0x48  # 72  — cell / list context header
-_TAG_TABLE             = 0x54  # 84  — table property record
-_TAG_SHAPE_COMPONENT   = 0x4C  # 76  — shape component (container)
-_TAG_SHAPE_PICTURE     = 0x55  # 85  — picture-specific shape data
+_TAG_BIN_DATA      = 0x12  # 18  — DocInfo: binary data entry
+_TAG_PARA_HEADER   = 0x42  # 66  — paragraph header
+_TAG_PARA_TEXT     = 0x43  # 67  — paragraph text body (UTF-16LE)
+_TAG_CTRL_HEADER   = 0x47  # 71  — inline control (table, picture, …)
+_TAG_LIST_HEADER   = 0x48  # 72  — cell boundary inside a table
+_TAG_SHAPE_PICTURE = 0x55  # 85  — picture shape data (bin_data_id at offset 71)
 
 # Control IDs stored as LE DWORD in CTRL_HEADER payload bytes 0-3.
 # ctrl_id(s) = big-endian ASCII → stored as LE bytes in the file.
@@ -220,6 +218,11 @@ def _mime_to_ext(mime: str) -> str:
             "image/gif": "gif", "image/bmp": "bmp"}.get(mime, "bin")
 
 
+# TAG_TABLE (0x4D=77) is the table-body record inside a CTRL_HEADER table group.
+# It carries row/col counts at bytes 4-7.
+_TAG_TABLE_BODY = 0x4D
+
+
 # ── section parser ─────────────────────────────────────────────────────────────
 
 def _parse_section(
@@ -231,90 +234,100 @@ def _parse_section(
     """Parse one BodyText section stream into a list of markdown blocks."""
     parts: list[str] = []
 
-    in_table = False
-    table_rows: list[list[str]] = []
-    current_row: list[str] = []
-    current_cell_parts: list[str] = []
-    cell_depth = 0
+    # Table state — resets on each new table
+    in_table        = False
+    table_ctrl_lvl  = -1   # level of the CTRL_HEADER that opened this table
+    table_col_count = 0    # columns per row (from TABLE_BODY record)
+    table_rows:       list[list[str]] = []
+    current_row:      list[str]       = []
+    current_cell_parts: list[str]     = []
+    in_cell         = False    # True once first LIST_HEADER is seen
+    cells_in_row    = 0        # cells completed in the current row
 
     # GSO (picture) state
-    in_gso = False
+    in_gso   = False
     gso_level = -1
 
-    for tag_id, level, payload in _iter_records(data):
-        # ── picture detection ─────────────────────────────────────────────
-        if tag_id == _TAG_CTRL_HEADER:
-            ctrl = payload[:4] if len(payload) >= 4 else b""
-            if ctrl == _CTRL_GSO:
-                in_gso = True
-                gso_level = level
-            elif ctrl == _CTRL_TABLE and level == 0:
-                in_table = True
-                table_rows = []
-                current_row = []
-                current_cell_parts = []
-                cell_depth = 0
-
-        if in_gso and tag_id == _TAG_SHAPE_PICTURE:
-            if len(payload) >= _PICTURE_BIN_DATA_ID_OFFSET + 2:
-                bin_data_id = struct.unpack_from("<H", payload, _PICTURE_BIN_DATA_ID_OFFSET)[0]
-                _emit_image(bin_data_id, bin_entries, bin_streams, images, parts)
-            in_gso = False
-
-        # Leaving GSO group: level <= gso_level means we're back at the parent level
-        if in_gso and level <= gso_level and tag_id != _TAG_CTRL_HEADER:
-            in_gso = False
-
-        # ── table parsing ─────────────────────────────────────────────────
-        if tag_id == _TAG_LIST_HEADER and in_table:
-            if level == 2:
-                if current_cell_parts or current_row:
-                    if current_cell_parts:
-                        current_row.append(" ".join(current_cell_parts))
-                        current_cell_parts = []
-                    if current_row:
-                        table_rows.append(current_row)
-                current_row = []
-                cell_depth = 0
-            elif level == 3:
-                current_cell_parts = []
-                cell_depth += 1
-
-        elif tag_id == _TAG_PARA_TEXT:
-            text = _para_text_from_payload(payload)
-            if not text:
-                pass
-            elif in_table and cell_depth > 0:
-                current_cell_parts.append(text)
-            elif not in_table and not in_gso:
-                parts.append(text)
-
-        # ── end of table ──────────────────────────────────────────────────
-        if in_table and level == 0 and tag_id not in (
-            _TAG_CTRL_HEADER, _TAG_LIST_HEADER, _TAG_PARA_HEADER,
-            _TAG_PARA_TEXT, _TAG_TABLE,
-        ):
-            if current_cell_parts:
-                current_row.append(" ".join(current_cell_parts))
-                current_cell_parts = []
-            if current_row:
-                table_rows.append(current_row)
-            md = _table_to_md(table_rows)
-            if md:
-                parts.append(md)
-            in_table = False
-            table_rows = []
-            current_row = []
-
-    # flush open table
-    if in_table:
-        if current_cell_parts:
+    def _close_table() -> None:
+        nonlocal in_table, table_ctrl_lvl, table_col_count
+        nonlocal table_rows, current_row, current_cell_parts
+        nonlocal in_cell, cells_in_row
+        if in_cell:
             current_row.append(" ".join(current_cell_parts))
         if current_row:
             table_rows.append(current_row)
         md = _table_to_md(table_rows)
         if md:
             parts.append(md)
+        in_table = False
+        table_ctrl_lvl = -1
+        table_col_count = 0
+        table_rows = []
+        current_row = []
+        current_cell_parts = []
+        in_cell = False
+        cells_in_row = 0
+
+    for tag_id, level, payload in _iter_records(data):
+        # ── table end: any record at or above the table's CTRL_HEADER level ──
+        if in_table and level <= table_ctrl_lvl:
+            _close_table()
+
+        # ── control header dispatch ───────────────────────────────────────────
+        if tag_id == _TAG_CTRL_HEADER:
+            ctrl = payload[:4] if len(payload) >= 4 else b""
+            if ctrl == _CTRL_GSO:
+                in_gso = True
+                gso_level = level
+            elif ctrl == _CTRL_TABLE:
+                in_table = True
+                table_ctrl_lvl = level
+                table_col_count = 0
+                table_rows = []
+                current_row = []
+                current_cell_parts = []
+                in_cell = False
+                cells_in_row = 0
+
+        # ── picture: extract image from SHAPE_PICTURE payload ────────────────
+        if in_gso and tag_id == _TAG_SHAPE_PICTURE:
+            if len(payload) >= _PICTURE_BIN_DATA_ID_OFFSET + 2:
+                bin_data_id = struct.unpack_from("<H", payload, _PICTURE_BIN_DATA_ID_OFFSET)[0]
+                _emit_image(bin_data_id, bin_entries, bin_streams, images, parts)
+            in_gso = False
+
+        if in_gso and level <= gso_level and tag_id != _TAG_CTRL_HEADER:
+            in_gso = False
+
+        # ── table: read col count from TABLE_BODY record ─────────────────────
+        if in_table and tag_id == _TAG_TABLE_BODY and level == table_ctrl_lvl + 1:
+            if len(payload) >= 8:
+                table_col_count = struct.unpack_from("<H", payload, 6)[0]
+
+        # ── table: each LIST_HEADER at ctrl_level+1 starts a new cell ────────
+        elif in_table and tag_id == _TAG_LIST_HEADER and level == table_ctrl_lvl + 1:
+            if in_cell:
+                current_row.append(" ".join(current_cell_parts))
+                current_cell_parts = []
+                cells_in_row += 1
+                if table_col_count > 0 and cells_in_row >= table_col_count:
+                    table_rows.append(current_row)
+                    current_row = []
+                    cells_in_row = 0
+            in_cell = True
+
+        # ── text paragraphs ───────────────────────────────────────────────────
+        elif tag_id == _TAG_PARA_TEXT:
+            text = _para_text_from_payload(payload)
+            if text:
+                if in_table and in_cell:
+                    current_cell_parts.append(text)
+                elif not in_table and not in_gso:
+                    parts.append(text)
+
+    # flush open table at end of stream
+    if in_table:
+        _close_table()
 
     return parts
 
