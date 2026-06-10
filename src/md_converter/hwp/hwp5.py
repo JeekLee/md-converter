@@ -22,8 +22,10 @@ from __future__ import annotations
 import re
 import struct
 import zlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Generator
+
+from ._common import ImageItem
 
 try:
     import olefile
@@ -49,16 +51,6 @@ _CTRL_GSO   = b" osg"   # ctrl_id(b"gso ") — General Shape Object (picture)
 
 # Offset of bin_data_id (u16) inside a TAG_SHAPE_PICTURE payload
 _PICTURE_BIN_DATA_ID_OFFSET = 71
-
-
-# ── image item ────────────────────────────────────────────────────────────────
-
-@dataclass
-class ImageItem:
-    idx: int        # 1-based — matches [[RHWP_IMAGE:{idx}]] token
-    data: bytes
-    mime: str
-    ext: str
 
 
 # ── record iterator ────────────────────────────────────────────────────────────

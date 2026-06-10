@@ -17,9 +17,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from .hwpx import ImageItem
-from .hwpx import parse as _hwpx_parse
-from .hwp5 import parse as _hwp5_parse
+from .hwp import ImageItem, parse_hwp5 as _hwp5_parse, parse_hwpx as _hwpx_parse
 from .llm import LlmConfig, drawing_to_mermaid, restructure_nested_tables
 from .s3 import S3Config, put_object
 
