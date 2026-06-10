@@ -8,8 +8,9 @@ Ports the document-level traversal logic from [rhwp](https://github.com/JeekLee/
 
 - **HWPX** parsing — pure stdlib, zero runtime dependencies
 - **HWP5** (binary OLE) parsing — requires `olefile`
-- Tables → GFM tables; multi-paragraph cells joined with space
+- Tables → GFM; merged cells (colspan) handled via `rowAddr`
 - Nested tables → LLM restructuring via any OpenAI-compatible endpoint
+- Drawing objects (text boxes, shapes) → plain text labels or Mermaid (see [Drawing objects](#drawing-objects))
 - Image extraction from HWP5 and HWPX (PNG / JPEG / GIF / BMP→PNG via Pillow)
 - Image upload to S3 / MinIO via AWS Signature V4 (no boto3)
 - Image save to local directory
@@ -29,6 +30,8 @@ pip install "md-converter[images]"
 
 ## Usage
 
+`llm` is a required argument — `MdConverter` raises `TypeError` if omitted.
+
 ```python
 from md_converter import MdConverter, S3Config, LocalImages, LlmConfig
 
@@ -38,10 +41,10 @@ converter = MdConverter(
         api_key="sk-...",
         model="qwen3-vl-30b-a3b",
     ),
-    images=LocalImages("output/images"),  # save images locally (optional)
+    images=LocalImages("output/images"),  # optional
 )
 
-md = converter.convert("document.hwp")   # file path
+md = converter.convert("document.hwp")        # file path
 md = converter.convert("document.hwpx")
 md = converter.convert(raw_bytes, suffix=".hwp")  # bytes
 ```
@@ -51,7 +54,7 @@ md = converter.convert(raw_bytes, suffix=".hwp")  # bytes
 ### Local directory
 
 ```python
-converter = MdConverter(images=LocalImages("images"))
+converter = MdConverter(llm=llm_cfg, images=LocalImages("images"))
 ```
 
 Images are written to `images/img0001.png`, `images/img0002.jpg`, etc.
@@ -62,13 +65,14 @@ Set `dir` relative to wherever you intend to write the markdown file.
 
 ```python
 converter = MdConverter(
+    llm=llm_cfg,
     images=S3Config(
         endpoint   = "http://localhost:9000",
         bucket     = "my-bucket",
         access_key = "minioadmin",
         secret_key = "minioadmin",
         prefix     = "docs",        # optional key prefix
-    )
+    ),
 )
 ```
 
@@ -78,12 +82,35 @@ Signing uses AWS Signature Version 4 via stdlib `hmac` + `hashlib` — no boto3 
 ### Drop images (default)
 
 ```python
-converter = MdConverter()  # images=None
+converter = MdConverter(llm=llm_cfg)  # images=None
 ```
 
 Image placeholders are removed from the output.
 
+## Drawing objects
+
+HWP/HWPX drawing objects (GSO in HWP5; `hp:rect`, `hp:ellipse`, `hp:line`, etc. in HWPX) are handled as follows:
+
+- **Embedded image** — extracted as a normal image (see Image backends above).
+- **Text box with a single label** — emitted as a plain text paragraph. This covers the common case of decorative section banners and standalone caption boxes.
+- **Text box with multiple labels** (e.g. a group of shapes in one paragraph) — LLM is called to produce a Mermaid diagram. On failure, the raw labels are kept as plain text.
+
+### Known limitation
+
+HWP renders each shape and each arrow as a separate drawing object. Connection lines carry no text, so the edge structure of a flowchart cannot be recovered from text extraction alone. Multi-label Mermaid conversion is therefore best-effort: the LLM sees only the label set, not which node connects to which.
+
 ## Config reference
+
+### `LlmConfig`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `url` | `str` | Base URL of an OpenAI-compatible `/v1` endpoint |
+| `api_key` | `str` | Bearer token |
+| `model` | `str` | Model ID |
+
+Used for: nested-table restructuring, drawing → Mermaid conversion.
+On LLM failure, the original flat content is kept as a fallback.
 
 ### `LocalImages`
 
@@ -101,15 +128,3 @@ Image placeholders are removed from the output.
 | `secret_key` | `str` | — | AWS / MinIO secret key |
 | `prefix` | `str` | `""` | Optional key prefix |
 | `region` | `str` | `"us-east-1"` | AWS region |
-
-### `LlmConfig`
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `url` | `str` | Base URL of an OpenAI-compatible `/v1` endpoint |
-| `api_key` | `str` | Bearer token |
-| `model` | `str` | Model ID |
-
-`llm` is required — `MdConverter` raises `TypeError` if omitted.
-On LLM failure the flat `[[NT:...]]` content is kept as a fallback.
-Drawing objects (GSO) without an embedded image are converted to Mermaid via LLM; on failure the raw text labels are kept.
