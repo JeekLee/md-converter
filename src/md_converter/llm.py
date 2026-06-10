@@ -8,6 +8,7 @@ stdlib only — no external HTTP client required.
 from __future__ import annotations
 
 import json
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -61,6 +62,52 @@ def _call_llm(content: str, cfg: LlmConfig) -> str:
     text: str = result["choices"][0]["message"]["content"].strip()
     # Constraints matching rhwp: escape pipes, replace newlines with <br>
     return text.replace("|", "\\|").replace("\r", "").replace("\n", " <br> ")
+
+
+_DRAWING_PROMPT = """\
+아래는 한글 문서(HWP) 도형 개체 안에 있던 텍스트 레이블입니다.
+도형·연결선·상자·화살표 등으로 구성된 다이어그램의 텍스트입니다.
+내용을 분석하여 가장 적합한 Mermaid 다이어그램으로 변환해 주세요.
+
+지침:
+- graph TD, flowchart LR, sequenceDiagram 등 가장 적합한 유형 선택
+- 변환이 불가능하면 graph TD 안에 텍스트를 노드로 배치
+- Mermaid 코드만 출력, 설명 없이 (```mermaid 래퍼 없이)
+
+도형 텍스트:
+{content}"""
+
+
+def drawing_to_mermaid(text: str, cfg: LlmConfig) -> str | None:
+    """Convert drawing text labels to a Mermaid diagram via LLM.
+
+    Returns Mermaid source on success, None on failure.
+    """
+    body = json.dumps({
+        "model": cfg.model,
+        "temperature": 0.0,
+        "messages": [{"role": "user", "content": _DRAWING_PROMPT.format(content=text)}],
+    }).encode()
+    endpoint = f"{cfg.url.rstrip('/')}/chat/completions"
+    req = urllib.request.Request(
+        endpoint,
+        data=body,
+        headers={
+            "Authorization": f"Bearer {cfg.api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            result = json.loads(resp.read())
+        mermaid: str = result["choices"][0]["message"]["content"].strip()
+        mermaid = re.sub(r"^```(?:mermaid)?\s*", "", mermaid)
+        mermaid = re.sub(r"\s*```\s*$", "", mermaid)
+        return mermaid.strip() or None
+    except Exception as exc:
+        sys.stderr.write(f"  drawing → mermaid failed: {exc}\n")
+        return None
 
 
 def restructure_nested_tables(markdown: str, cfg: LlmConfig) -> str:

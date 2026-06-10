@@ -33,12 +33,12 @@ pip install "md-converter[images]"
 from md_converter import MdConverter, S3Config, LocalImages, LlmConfig
 
 converter = MdConverter(
-    images=LocalImages("output/images"),  # save images locally
     llm=LlmConfig(
         url="http://localhost:10080/v1",
         api_key="sk-...",
         model="qwen3-vl-30b-a3b",
     ),
+    images=LocalImages("output/images"),  # save images locally (optional)
 )
 
 md = converter.convert("document.hwp")   # file path
@@ -110,5 +110,6 @@ Image placeholders are removed from the output.
 | `api_key` | `str` | Bearer token |
 | `model` | `str` | Model ID |
 
+`llm` is required — `MdConverter` raises `TypeError` if omitted.
 On LLM failure the flat `[[NT:...]]` content is kept as a fallback.
-If `llm=None` (default), nested-table markers are left as-is in the output.
+Drawing objects (GSO) without an embedded image are converted to Mermaid via LLM; on failure the raw text labels are kept.

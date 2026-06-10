@@ -20,7 +20,7 @@ from pathlib import Path
 from .hwpx import ImageItem
 from .hwpx import parse as _hwpx_parse
 from .hwp5 import parse as _hwp5_parse
-from .llm import LlmConfig, restructure_nested_tables
+from .llm import LlmConfig, drawing_to_mermaid, restructure_nested_tables
 from .s3 import S3Config, put_object
 
 
@@ -39,19 +39,19 @@ class MdConverter:
     """HWP / HWPX → Markdown converter.
 
     Args:
+        llm:    LlmConfig (required) — used for nested-table restructuring
+                and drawing → Mermaid conversion.
         images: Where to put extracted images.
-                S3Config  — upload to S3/MinIO, embed as s3:// URL.
+                S3Config    — upload to S3/MinIO, embed as s3:// URL.
                 LocalImages — write to a local directory, embed as a file path.
                 None (default) — drop images.
-        llm:    LlmConfig for LLM-based nested-table restructuring,
-                or None (default) to skip.
     """
 
     def __init__(
         self,
         *,
+        llm: LlmConfig,
         images: S3Config | LocalImages | None = None,
-        llm: LlmConfig | None = None,
     ) -> None:
         self._images = images
         self._llm = llm
@@ -89,11 +89,28 @@ class MdConverter:
             raise ValueError(f"Unsupported format: {ext!r} (expected '.hwp' or '.hwpx')")
 
         md = self._process_images(md, image_items)
-
-        if self._llm is not None:
-            md = restructure_nested_tables(md, self._llm)
+        md = self._process_drawings(md)
+        md = restructure_nested_tables(md, self._llm)
 
         return md
+
+    # ── drawing handling ──────────────────────────────────────────────────────
+
+    def _process_drawings(self, md: str) -> str:
+        """Convert ```hwp-drawing blocks to Mermaid via LLM (fallback: drop)."""
+        pattern = re.compile(r"```hwp-drawing\n(.*?)```", re.DOTALL)
+        if not pattern.search(md):
+            return md
+
+        def _replace(m: re.Match) -> str:
+            drawing_text = m.group(1).strip()
+            mermaid = drawing_to_mermaid(drawing_text, self._llm)
+            if mermaid:
+                sys.stderr.write(f"  drawing → mermaid ({len(drawing_text)} chars)\n")
+                return f"```mermaid\n{mermaid}\n```"
+            return drawing_text
+
+        return pattern.sub(_replace, md)
 
     # ── image handling ────────────────────────────────────────────────────────
 
