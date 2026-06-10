@@ -6,12 +6,41 @@ import re
 
 # ── raw cell → GFM cell text ──────────────────────────────────────────────────
 
+_CJK = re.compile(r"[가-힣一-鿿㐀-䶿]")
+
+
+def _join_lines(text: str) -> str:
+    """Join PDF line-wrap newlines inside a cell.
+
+    PDF column-wrap splits lines mid-word (CJK↔CJK, no space before \\n)
+    or at word boundaries. Heuristic: if the last char before \\n is CJK and
+    the first char after \\n is CJK, join without space (mid-word break);
+    otherwise join with a space.
+    """
+    parts = text.split("\n")
+    if len(parts) == 1:
+        return text
+    out = parts[0]
+    for part in parts[1:]:
+        if out and _CJK.search(out[-1]) and part and _CJK.search(part[0]):
+            out = out + part
+        else:
+            out = out.rstrip() + " " + part.lstrip()
+    return out
+
+
 def _cell_text(cell: str | None) -> str:
     if cell is None:
         return ""
-    # Remove CJK-adjacent spaces that pdfplumber inserts between chars
-    text = re.sub(r"(?<=[　-鿿가-힣])\s+(?=[　-鿿가-힣])", "", cell)
-    return text.replace("|", "\\|").replace("\n", " ").strip()
+    text = _join_lines(cell)
+    # Remove character-level spacing artifacts: "다 음" → "다음"
+    # Only fires when each CJK char is individually space-separated (no multi-char words involved)
+    text = re.sub(
+        r"(?<![가-힣])([가-힣])( [가-힣])+(?![가-힣])",
+        lambda m: m.group(0).replace(" ", ""),
+        text,
+    )
+    return text.replace("|", "\\|").strip()
 
 
 # ── GFM table rendering ───────────────────────────────────────────────────────

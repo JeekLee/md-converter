@@ -24,10 +24,16 @@ def test_cell_text_newline_replaced():
     assert _cell_text("hello\nworld") == "hello world"
 
 
-def test_cell_text_cjk_space_removed():
-    # pdfplumber inserts spaces between CJK chars — should be stripped
-    result = _cell_text("보 험 인 정")
-    assert " " not in result
+def test_cell_text_cjk_char_spacing_removed():
+    # PDF char-level spacing artifact: individual syllables separated by spaces
+    assert _cell_text("보 험 인 정") == "보험인정"
+    assert _cell_text("- 다 음 -") == "- 다음 -"
+
+
+def test_cell_text_word_boundary_space_preserved():
+    # Word-boundary spaces between multi-char words must be kept
+    assert " " in _cell_text("성인 시상면")
+    assert " " in _cell_text("척추 변형으로 인한 통증")
 
 
 # ── table_to_md ───────────────────────────────────────────────────────────────
