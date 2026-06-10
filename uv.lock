@@ -248,6 +248,7 @@ dev = [
     { name = "olefile" },
     { name = "pdfplumber" },
     { name = "pillow" },
+    { name = "pypdf" },
     { name = "pytest" },
 ]
 hwp5 = [
@@ -258,6 +259,14 @@ images = [
 ]
 pdf = [
     { name = "pdfplumber" },
+    { name = "pillow" },
+    { name = "pypdf" },
+]
+pdf-ocr = [
+    { name = "pdfplumber" },
+    { name = "pillow" },
+    { name = "pypdf" },
+    { name = "pytesseract" },
 ]
 
 [package.metadata]
@@ -266,11 +275,18 @@ requires-dist = [
     { name = "olefile", marker = "extra == 'hwp5'", specifier = ">=0.47" },
     { name = "pdfplumber", marker = "extra == 'dev'", specifier = ">=0.11" },
     { name = "pdfplumber", marker = "extra == 'pdf'", specifier = ">=0.11" },
+    { name = "pdfplumber", marker = "extra == 'pdf-ocr'", specifier = ">=0.11" },
     { name = "pillow", marker = "extra == 'dev'", specifier = ">=10.0" },
     { name = "pillow", marker = "extra == 'images'", specifier = ">=10.0" },
+    { name = "pillow", marker = "extra == 'pdf'", specifier = ">=10.0" },
+    { name = "pillow", marker = "extra == 'pdf-ocr'", specifier = ">=10.0" },
+    { name = "pypdf", marker = "extra == 'dev'", specifier = ">=4.0" },
+    { name = "pypdf", marker = "extra == 'pdf'", specifier = ">=4.0" },
+    { name = "pypdf", marker = "extra == 'pdf-ocr'", specifier = ">=4.0" },
+    { name = "pytesseract", marker = "extra == 'pdf-ocr'", specifier = ">=0.3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
 ]
-provides-extras = ["hwp5", "images", "pdf", "dev"]
+provides-extras = ["hwp5", "images", "pdf", "pdf-ocr", "dev"]
 
 [[package]]
 name = "olefile"
@@ -432,6 +448,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pypdf"
+version = "6.13.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/15/d9/9d12fa0d9660d03320725ff686c961b645a4218940a82296e1272d9e1ff0/pypdf-6.13.1.tar.gz", hash = "sha256:4841d8a4c1589e5833915dc0c7ddfacff80a2e0bcbeb5d1e681fecaa1674b03a", size = 6477811, upload-time = "2026-06-08T11:01:49.344Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fe/dd/8f03e0a5788a5d1feb4550617c3e6db5e9099eaee248a3e482ddaeacbbb0/pypdf-6.13.1-py3-none-any.whl", hash = "sha256:e555e4ce3f561ef069307622f1374136ba964ca6ca24f24158701decaf83ed9b", size = 346259, upload-time = "2026-06-08T11:01:47.741Z" },
+]
+
+[[package]]
 name = "pypdfium2"
 version = "5.9.0"
 source = { registry = "https://pypi.org/simple" }
@@ -458,6 +483,19 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/fc/d0/e53c68555ff128b2470e4a468762b320d9c6ae2c914decea3487d923982f/pypdfium2-5.9.0-py3-none-win32.whl", hash = "sha256:b0057dc8c2033584dc3e61afb5f23a135dab52b081695b435e27f9b7b074c605", size = 3670966, upload-time = "2026-06-01T15:43:32.991Z" },
     { url = "https://files.pythonhosted.org/packages/da/0c/22e5fc035ad1594b44f265bc0a59ae34d377bc2ea74a92793e7a674bf96d/pypdfium2-5.9.0-py3-none-win_amd64.whl", hash = "sha256:06508c33b9772cf3878e48364c6e14c70cefc18a3abd6983ac9f338da9305275", size = 3800959, upload-time = "2026-06-01T15:43:34.536Z" },
     { url = "https://files.pythonhosted.org/packages/11/e3/cf1711add7add22a17f7c7633cd795edc92f17ab7bdf1930493ae0f56680/pypdfium2-5.9.0-py3-none-win_arm64.whl", hash = "sha256:565ddfc98795fd2f6054b544ee9791d7b9032f9cf77a57891b6e501fafd0ef3f", size = 3585718, upload-time = "2026-06-01T15:43:36.521Z" },
+]
+
+[[package]]
+name = "pytesseract"
+version = "0.3.13"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+    { name = "pillow" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9f/a6/7d679b83c285974a7cb94d739b461fa7e7a9b17a3abfd7bf6cbc5c2394b0/pytesseract-0.3.13.tar.gz", hash = "sha256:4bf5f880c99406f52a3cfc2633e42d9dc67615e69d8a509d74867d3baddb5db9", size = 17689, upload-time = "2024-08-16T02:33:56.762Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7a/33/8312d7ce74670c9d39a532b2c246a853861120486be9443eebf048043637/pytesseract-0.3.13-py3-none-any.whl", hash = "sha256:7a99c6c2ac598360693d83a416e36e0b33a67638bb9d77fdcac094a3589d4b34", size = 14705, upload-time = "2024-08-16T02:36:10.09Z" },
 ]
 
 [[package]]
