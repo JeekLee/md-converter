@@ -19,7 +19,7 @@ from pathlib import Path
 
 from ._common import ImageItem
 from .hwp import parse_hwp5 as _hwp5_parse, parse_hwpx as _hwpx_parse
-from .llm import LlmConfig, drawing_to_mermaid, restructure_nested_tables, vision_to_mermaid
+from .llm import LlmConfig, drawing_to_mermaid, restructure_nested_tables, vision_to_mermaid, vision_to_text
 from .pdf import parse as _pdf_parse
 from .s3 import S3Config, put_object
 
@@ -86,7 +86,7 @@ class MdConverter:
         elif s == ".hwp":
             md, image_items = _hwp5_parse(data)
         elif s == ".pdf":
-            md, image_items = _pdf_parse(data)
+            md, image_items = _pdf_parse(data, llm=self._llm)
         else:
             raise ValueError(f"Unsupported format: {ext!r} (expected '.hwp', '.hwpx', or '.pdf')")
 
