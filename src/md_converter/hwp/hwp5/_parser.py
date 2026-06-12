@@ -18,7 +18,6 @@ from ._records import (
     _TAG_LIST_HEADER,
     _TAG_PARA_TEXT,
     _TAG_SHAPE_PICTURE,
-    _TAG_TABLE_BODY,
     _decode_stream,
     _iter_records,
 )
