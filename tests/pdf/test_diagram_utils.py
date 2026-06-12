@@ -1,4 +1,4 @@
-from md_converter.pdf._diagram_utils import detect_diagram_bboxes, render_bbox_to_png
+from md_converter.pdf.diagram_utils import detect_diagram_bboxes, render_bbox_to_png
 
 
 class _MockCrop:

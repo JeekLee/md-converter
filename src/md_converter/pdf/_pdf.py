@@ -6,7 +6,7 @@ import re
 from typing import TYPE_CHECKING
 
 from .._common import ImageItem
-from ._diagram_utils import detect_diagram_bboxes, render_bbox_to_png
+from .diagram_utils import detect_diagram_bboxes, render_bbox_to_png
 from ._image_utils import extract_page_images, image_token
 from ._ocr import is_scanned_page, ocr_page
 from ._table_utils import merge_overflow_tables, table_to_md
