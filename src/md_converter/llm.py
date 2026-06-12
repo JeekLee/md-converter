@@ -110,6 +110,52 @@ def drawing_to_mermaid(text: str, cfg: LlmConfig) -> str | None:
         return None
 
 
+_DIAGRAM_VISION_PROMPT = """\
+이 다이어그램 이미지를 Mermaid 코드로 변환해 주세요.
+
+지침:
+- graph TD, flowchart LR, sequenceDiagram 등 가장 적합한 유형 선택
+- 변환이 불가능하면 graph TD 안에 텍스트를 노드로 배치
+- Mermaid 코드만 출력, 설명 없이 (```mermaid 래퍼 없이)"""
+
+
+def vision_to_mermaid(png_bytes: bytes, cfg: LlmConfig) -> str | None:
+    """다이어그램 PNG 이미지를 vision LLM으로 Mermaid 코드로 변환한다."""
+    import base64
+    b64 = base64.b64encode(png_bytes).decode()
+    body = json.dumps({
+        "model": cfg.model,
+        "temperature": 0.0,
+        "messages": [{
+            "role": "user",
+            "content": [
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
+                {"type": "text", "text": _DIAGRAM_VISION_PROMPT},
+            ],
+        }],
+    }).encode()
+    endpoint = f"{cfg.url.rstrip('/')}/chat/completions"
+    req = urllib.request.Request(
+        endpoint,
+        data=body,
+        headers={
+            "Authorization": f"Bearer {cfg.api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=90) as resp:
+            result = json.loads(resp.read())
+        mermaid: str = result["choices"][0]["message"]["content"].strip()
+        mermaid = re.sub(r"^```(?:mermaid)?\s*", "", mermaid)
+        mermaid = re.sub(r"\s*```\s*$", "", mermaid)
+        return mermaid.strip() or None
+    except Exception as exc:
+        sys.stderr.write(f"  vision → mermaid failed: {exc}\n")
+        return None
+
+
 def restructure_nested_tables(markdown: str, cfg: LlmConfig) -> str:
     """Replace [[NT:...]] markers with LLM-restructured text.
 
