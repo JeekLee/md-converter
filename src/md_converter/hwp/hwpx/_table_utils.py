@@ -1,0 +1,69 @@
+"""HWPX table: XML → GFM conversion."""
+from __future__ import annotations
+
+from xml.etree import ElementTree as ET
+
+from .._common import _escape_cell
+from ._xml import _para_text, _q
+
+
+def _cell_plain_text(tc: ET.Element) -> str:
+    """Flat text from hp:tc — used for inner cells of nested tables."""
+    sub = tc.find(_q("subList"))
+    if sub is None:
+        return ""
+    parts = []
+    for p in sub.findall(_q("p")):
+        t = _para_text(p).strip()
+        if t:
+            parts.append(t)
+    return " ".join(parts)
+
+
+def _cell_text(tc: ET.Element) -> str:
+    """Text from hp:tc, expanding nested tables as [[NT:r0c0|c1;r1c0|c1]].
+
+    Paragraphs are joined with ' <br> ' to keep multi-paragraph cell content
+    intact inside a GFM table cell.
+    """
+    sub = tc.find(_q("subList"))
+    if sub is None:
+        return ""
+    parts = []
+    for p in sub.findall(_q("p")):
+        tbl = p.find(f".//{_q('tbl')}")
+        if tbl is not None:
+            rows = []
+            for tr in tbl.findall(_q("tr")):
+                row = "|".join(_cell_plain_text(tc2) for tc2 in tr.findall(_q("tc")))
+                rows.append(row)
+            parts.append("[[NT:" + ";".join(rows) + "]]")
+        else:
+            t = _para_text(p).strip()
+            if t:
+                parts.append(t)
+    return " <br> ".join(parts)
+
+
+def _escape_cell_for_table(s: str) -> str:
+    """Escape | for GFM, but leave [[NT:...]] markers intact."""
+    if "[[NT:" in s:
+        return s
+    return _escape_cell(s)
+
+
+def table_to_md(tbl: ET.Element) -> str:
+    """Convert hp:tbl to a GFM table string."""
+    rows: list[list[str]] = []
+    for tr in tbl.findall(_q("tr")):
+        rows.append([_escape_cell_for_table(_cell_text(tc)) for tc in tr.findall(_q("tc"))])
+    if not rows:
+        return ""
+    col_count = max(len(r) for r in rows)
+    lines: list[str] = []
+    for i, row in enumerate(rows):
+        padded = row + [""] * (col_count - len(row))
+        lines.append("| " + " | ".join(padded) + " |")
+        if i == 0:
+            lines.append("|" + "|".join(" --- " for _ in padded) + "|")
+    return "\n".join(lines)
