@@ -19,7 +19,8 @@ from pathlib import Path
 
 from ._common import ImageItem
 from .hwp import parse_hwp5 as _hwp5_parse, parse_hwpx as _hwpx_parse
-from .llm import LlmConfig, drawing_to_mermaid, restructure_nested_tables, vision_to_mermaid, vision_to_text
+from .llm import LlmConfig, drawing_to_mermaid, vision_to_mermaid, vision_to_text
+from .nested_tables import extract_nested_tables
 from .pdf import parse as _pdf_parse
 from .s3 import S3Config, put_object
 
@@ -93,7 +94,7 @@ class MdConverter:
         md = self._process_diagram_images(md, image_items)
         md = self._process_images(md, image_items)
         md = self._process_drawings(md)
-        md = restructure_nested_tables(md, self._llm)
+        md = extract_nested_tables(md)
 
         return md
 
