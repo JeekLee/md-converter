@@ -70,9 +70,9 @@ def render_bbox_to_png(
             "pip install 'md-converter[pdf]'"
         ) from exc
 
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    fitz_page = doc.load_page(page_idx)
-    clip = fitz.Rect(*bbox)
-    mat = fitz.Matrix(2.0, 2.0)
-    pix = fitz_page.get_pixmap(matrix=mat, clip=clip)
-    return pix.tobytes("png")
+    with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+        fitz_page = doc.load_page(page_idx)
+        clip = fitz.Rect(*bbox)
+        mat = fitz.Matrix(2.0, 2.0)
+        pix = fitz_page.get_pixmap(matrix=mat, clip=clip)
+        return pix.tobytes("png")
