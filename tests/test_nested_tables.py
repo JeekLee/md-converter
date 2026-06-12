@@ -32,6 +32,7 @@ def test_two_nested_tables_in_one_parent_block():
     assert "→ 표 1" in out and "→ 표 2" in out
     assert out.index("→ 표 1") < out.index("→ 표 2")  # encounter order
     assert "**[표 1]**" in out and "**[표 2]**" in out
+    assert "| → 표 1 | → 표 2 |" in out
 
 
 def test_counter_spans_multiple_blocks():
@@ -44,6 +45,7 @@ def test_counter_spans_multiple_blocks():
     assert "→ 표 1" in out
     assert "→ 표 2" in out
     assert "중간 문단" in out
+    assert out.index("→ 표 1") < out.index("중간 문단") < out.index("→ 표 2")
 
 
 def test_empty_nested_table_dropped():

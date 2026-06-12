@@ -73,6 +73,9 @@ def extract_nested_tables(md: str) -> str:
                 result.append(f"→ 표 {counter}")
                 extracted.append(f"**[표 {counter}]**\n\n{_to_gfm(rows)}")
             remaining = after[end + 2:]
+        # Parent-cell text is emitted verbatim — it is NOT run through _escape.
+        # Escaping pipes in the surrounding cell content is the caller/parser's responsibility;
+        # only the extracted standalone table cells are escaped (via _escape above).
         result.append(remaining)
         out.append("".join(result))
         out.extend(extracted)
