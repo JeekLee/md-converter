@@ -6,6 +6,7 @@ import re
 from typing import TYPE_CHECKING
 
 from .._common import ImageItem
+from ._diagram_utils import detect_diagram_bboxes, render_bbox_to_png
 from ._image_utils import extract_page_images, image_token
 from ._ocr import is_scanned_page, ocr_page
 from ._table_utils import merge_overflow_tables, table_to_md
@@ -120,6 +121,34 @@ def parse(data: bytes) -> tuple[str, list[ImageItem]]:
 
             # ── Interleave text / tables / images in y-order ──────────────────
             tables = page.find_tables()
+
+            # ── 다이어그램 영역 감지 + 렌더링 ─────────────────────────────
+            table_bboxes = [t.bbox for t in tables]
+            try:
+                diagram_regions = detect_diagram_bboxes(page, table_bboxes)
+            except Exception as exc:
+                import sys
+                sys.stderr.write(f"  diagram detection failed (page {page_idx}): {exc}\n")
+                diagram_regions = []
+
+            for diag_y, diag_bbox in diagram_regions:
+                try:
+                    png_bytes = render_bbox_to_png(data, page_idx, diag_bbox)
+                except Exception as exc:
+                    import sys
+                    sys.stderr.write(f"  diagram render failed (page {page_idx}): {exc}\n")
+                    continue
+                item = ImageItem(
+                    idx=img_counter,
+                    data=png_bytes,
+                    mime="image/png",
+                    ext="png",
+                    is_diagram=True,
+                )
+                all_images.append(item)
+                img_tokens.append((diag_y, image_token(img_counter)))
+                img_counter += 1
+
             for _, chunk in _page_items_ordered(page, tables, img_tokens):
                 if chunk.strip():
                     parts.append(chunk.strip())
