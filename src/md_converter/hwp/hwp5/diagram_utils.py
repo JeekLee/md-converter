@@ -29,7 +29,7 @@ from __future__ import annotations
 import struct
 
 from ..._diagram import DiagramGraph, ShapeEdge, ShapeNode
-from ._records import _TAG_CTRL_HEADER, _TAG_PARA_TEXT, _TAG_SHAPE_COMPONENT_LINE  # noqa: F401
+from ._records import _TAG_CTRL_HEADER, _TAG_PARA_TEXT, _TAG_SHAPE_COMPONENT_LINE
 
 # ctrl_id bytes (LE-encoded, first 4 bytes of CTRL_HEADER payload)
 _CTRL_CONNECTOR = b"loc$"  # ctrl_id("$col") — connector line
@@ -94,6 +94,8 @@ def extract_diagram(gso_records: list[tuple[int, int, bytes]]) -> DiagramGraph |
 
             ctrl_bytes = payload[0:4]
             instance_id = struct.unpack_from("<I", payload, 32)[0]
+            if instance_id == 0:
+                continue
             id_str = str(instance_id)
 
             if ctrl_bytes in _SHAPE_CTRL_TYPE:
@@ -135,7 +137,7 @@ def extract_diagram(gso_records: list[tuple[int, int, bytes]]) -> DiagramGraph |
             link_type = struct.unpack_from("<I", payload, 16)[0]
             start_id  = struct.unpack_from("<I", payload, 20)[0]
             end_id    = struct.unpack_from("<I", payload, 28)[0]
-            arrow = (link_type % 3) != 0
+            arrow = (link_type % 3) != 0  # 0/3/6=no arrow, 1/4/7=one way, 2/5/8=both ends
 
             edges.append(ShapeEdge(
                 from_id=str(start_id),
