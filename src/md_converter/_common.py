@@ -16,3 +16,4 @@ class ImageItem:
     data: bytes
     mime: str
     ext: str
+    is_diagram: bool = False  # True = PDF 렌더링된 다이어그램 영역

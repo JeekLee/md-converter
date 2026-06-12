@@ -6,8 +6,10 @@ import re
 import struct
 
 from .._common import ImageItem, _detect_mime, _mime_to_ext
+from ..._diagram import graph_to_mermaid
 from ._image_utils import _BinEntry, load_bin_data, parse_doc_info_bin_data
 from ._table_utils import table_to_md
+from .diagram_utils import extract_diagram
 from ._records import (
     _CTRL_GSO,
     _CTRL_TABLE,
@@ -90,10 +92,11 @@ def _parse_section(
     current_row_addr = -1  # rowAddr from LIST_HEADER; change = new row
 
     # ── GSO (drawing / picture) state ─────────────────────────────────────────
-    in_gso         = False
-    gso_level      = -1
+    in_gso          = False
+    gso_level       = -1
     gso_text_parts: list[str] = []
-    gso_had_image  = False
+    gso_had_image   = False
+    gso_records:    list[tuple[int, int, bytes]] = []
 
     def _close_table() -> None:
         nonlocal in_table, table_ctrl_lvl, table_col_count
@@ -128,6 +131,7 @@ def _parse_section(
                 gso_level = level
                 gso_text_parts = []
                 gso_had_image = False
+                gso_records = []
             elif ctrl == _CTRL_TABLE:
                 in_table = True
                 table_ctrl_lvl = level
@@ -137,6 +141,10 @@ def _parse_section(
                 current_cell_parts = []
                 in_cell = False
                 current_row_addr = -1
+
+        # GSO 내부 레코드 누적
+        if in_gso and level > gso_level:
+            gso_records.append((tag_id, level, payload))
 
         # ── picture inside GSO ────────────────────────────────────────────────
         if in_gso and tag_id == _TAG_SHAPE_PICTURE:
@@ -149,12 +157,19 @@ def _parse_section(
 
         # ── GSO exit: level returns to or above the GSO opener ────────────────
         if in_gso and level <= gso_level and tag_id != _TAG_CTRL_HEADER:
-            if not gso_had_image and gso_text_parts:
-                drawing_text = "\n".join(gso_text_parts)
-                parts.append(f"```hwp-drawing\n{drawing_text}\n```")
+            if not gso_had_image:
+                diagram_graph = extract_diagram(gso_records)
+                if diagram_graph is not None:
+                    mermaid = graph_to_mermaid(diagram_graph)
+                    if mermaid:
+                        parts.append(f"```mermaid\n{mermaid}\n```")
+                elif gso_text_parts:
+                    drawing_text = "\n".join(gso_text_parts)
+                    parts.append(f"```hwp-drawing\n{drawing_text}\n```")
             in_gso = False
             gso_text_parts = []
             gso_had_image = False
+            gso_records = []
 
         # ── table body: read col count ────────────────────────────────────────
         if in_table and tag_id == _TAG_TABLE_BODY and level == table_ctrl_lvl + 1:

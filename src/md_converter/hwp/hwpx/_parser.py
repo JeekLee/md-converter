@@ -12,9 +12,11 @@ import zipfile
 from xml.etree import ElementTree as ET
 
 from .._common import ImageItem
+from ..._diagram import graph_to_mermaid
 from ._image_utils import extract_image, load_bin_data_map
 from ._table_utils import table_to_md
 from ._xml import _drawing_texts, _para_text, _q
+from .diagram_utils import extract_diagram
 
 
 def _section_names(z: zipfile.ZipFile) -> list[str]:
@@ -57,6 +59,13 @@ def parse(data: bytes) -> tuple[str, list[ImageItem]]:
                     continue
 
                 # ── Drawing shapes ────────────────────────────────────────────
+                diagram_graph = extract_diagram(p)
+                if diagram_graph is not None:
+                    mermaid = graph_to_mermaid(diagram_graph)
+                    if mermaid:
+                        parts.append(f"```mermaid\n{mermaid}\n```")
+                    continue
+
                 drawing_labels = _drawing_texts(p)
                 if drawing_labels:
                     parts.append("```hwp-drawing\n" + "\n".join(drawing_labels) + "\n```")

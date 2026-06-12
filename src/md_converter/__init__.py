@@ -19,7 +19,7 @@ from pathlib import Path
 
 from ._common import ImageItem
 from .hwp import parse_hwp5 as _hwp5_parse, parse_hwpx as _hwpx_parse
-from .llm import LlmConfig, drawing_to_mermaid, restructure_nested_tables
+from .llm import LlmConfig, drawing_to_mermaid, restructure_nested_tables, vision_to_mermaid
 from .pdf import parse as _pdf_parse
 from .s3 import S3Config, put_object
 
@@ -90,6 +90,7 @@ class MdConverter:
         else:
             raise ValueError(f"Unsupported format: {ext!r} (expected '.hwp', '.hwpx', or '.pdf')")
 
+        md = self._process_diagram_images(md, image_items)
         md = self._process_images(md, image_items)
         md = self._process_drawings(md)
         md = restructure_nested_tables(md, self._llm)
@@ -122,6 +123,24 @@ class MdConverter:
             return drawing_text
 
         return pattern.sub(_replace, md)
+
+    def _process_diagram_images(self, md: str, image_items: list[ImageItem]) -> str:
+        """Try vision LLM on is_diagram=True images; replace token with mermaid block on success.
+
+        Leaves token in place on failure so _process_images() handles it as a regular image.
+        """
+        for img in image_items:
+            if not img.is_diagram:
+                continue
+            token = f"[[RHWP_IMAGE:{img.idx}]]"
+            if token not in md:
+                continue
+            mermaid = vision_to_mermaid(img.data, self._llm)
+            if mermaid:
+                sys.stderr.write(f"  diagram image → mermaid (idx={img.idx})\n")
+                md = md.replace(token, f"```mermaid\n{mermaid}\n```")
+                img.is_diagram = False
+        return md
 
     # ── image handling ────────────────────────────────────────────────────────
 
