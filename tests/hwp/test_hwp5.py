@@ -11,13 +11,9 @@ pytest.importorskip("olefile")
 
 import struct as _struct
 
-from md_converter.hwp.hwp5 import (
-    _decompress,
-    _iter_records,
-    _para_text_from_payload,
-    _parse_section,
-    parse,
-)
+from md_converter.hwp.hwp5._records import _decompress, _iter_records
+from md_converter.hwp.hwp5._parser import _para_text_from_payload, _parse_section
+from md_converter.hwp.hwp5 import parse
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
