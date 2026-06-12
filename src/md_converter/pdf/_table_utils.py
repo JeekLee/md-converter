@@ -71,6 +71,17 @@ def bbox_in_cell(
     return sx0 >= cx0 - tol and sx1 <= cx1 + tol and st >= ct - tol and sb <= cb + tol
 
 
+def bbox_area(b: tuple[float, float, float, float]) -> float:
+    """Area of a bbox (x0, top, x1, bottom); clamped non-negative."""
+    return max(0.0, b[2] - b[0]) * max(0.0, b[3] - b[1])
+
+
+def bbox_near_equal(a, b, margin: float = 3.0) -> bool:
+    """True if two bboxes match within margin on all four coords (a duplicate
+    region, NOT a nesting relationship)."""
+    return all(abs(a[i] - b[i]) <= margin for i in range(4))
+
+
 def _escape_cell_for_table(s: str | None) -> str:
     """Leave [[NT:...]] marker cells intact (so the marker survives); escape others."""
     if s is not None and "[[NT:" in s:

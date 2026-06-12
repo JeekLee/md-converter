@@ -162,3 +162,48 @@ def test_nested_pdf_via_fitz():
     assert "**[표 1]**" in out
     assert "1000" in out          # nested leaf preserved
     assert "FORMAT" in out and "EXAMPLE" in out   # surrounding cell text preserved
+
+
+def test_resolve_nested_mutual_containment_no_loss():
+    # two identical single-cell tables must NOT suppress each other (no data loss)
+    a = _Tbl(bbox=(0, 0, 200, 100), rows_cells=[[(0, 0, 200, 100)]], extracted=[["A"]])
+    b = _Tbl(bbox=(0, 0, 200, 100), rows_cells=[[(0, 0, 200, 100)]], extracted=[["B"]])
+    suppressed, overrides = resolve_nested(_Page({}), [a, b])
+    assert suppressed == set()
+    assert overrides == {}
+
+
+def test_resolve_nested_near_duplicate_no_nesting():
+    # jittered near-duplicate (within margin) is not treated as nesting
+    a = _Tbl(bbox=(0, 0, 200, 100), rows_cells=[[(0, 0, 200, 100)]], extracted=[["A"]])
+    b = _Tbl(bbox=(0.5, 0.4, 200.3, 100.2), rows_cells=[[(0.5, 0.4, 200.3, 100.2)]], extracted=[["A"]])
+    suppressed, overrides = resolve_nested(_Page({}), [a, b])
+    assert suppressed == set()
+    assert overrides == {}
+
+
+def test_resolve_nested_multi_child_cell():
+    # one big parent cell containing two stacked sub-tables -> two markers in y-order
+    parent = _Tbl(bbox=(0, 0, 400, 400), rows_cells=[[(0, 0, 400, 400)]], extracted=[["FLAT"]])
+    sub1 = _Tbl(bbox=(50, 50, 350, 120), rows_cells=[[(50, 50, 350, 120)]], extracted=[["a1", "b1"]])
+    sub2 = _Tbl(bbox=(50, 200, 350, 270), rows_cells=[[(50, 200, 350, 270)]], extracted=[["a2", "b2"]])
+    page = _Page({0: "top", 120: "mid", 270: "bot"})
+    suppressed, overrides = resolve_nested(page, [parent, sub1, sub2])
+    assert suppressed == {1, 2}
+    cell = overrides[0][0][0]
+    assert cell.count("[[NT:") == 2
+    assert cell.index("[[NT:a1") < cell.index("[[NT:a2")
+
+
+def test_resolve_nested_depth2_chain():
+    # A contains B contains C -> only one marker level (B in A); C rides as B's flat text
+    A = _Tbl(bbox=(0, 0, 400, 400), rows_cells=[[(0, 0, 400, 400)]], extracted=[["A_FLAT"]])
+    B = _Tbl(bbox=(50, 50, 350, 350), rows_cells=[[(50, 50, 350, 350)]], extracted=[["B has C_FLAT"]])
+    C = _Tbl(bbox=(100, 100, 300, 200), rows_cells=[[(100, 100, 300, 200)]], extracted=[["c1", "c2"]])
+    page = _Page({0: "", 50: "", 350: ""})
+    suppressed, overrides = resolve_nested(page, [A, B, C])
+    assert suppressed == {1, 2}
+    assert set(overrides.keys()) == {0}
+    cell = overrides[0][0][0]
+    assert cell.count("[[NT:") == 1
+    assert "C_FLAT" in cell

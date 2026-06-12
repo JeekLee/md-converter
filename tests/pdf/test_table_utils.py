@@ -149,7 +149,9 @@ def test_non_table_text_passthrough():
 
 from md_converter.pdf._table_utils import (
     _clean_cell,
+    bbox_area,
     bbox_in_cell,
+    bbox_near_equal,
     serialize_nt,
 )
 
@@ -195,3 +197,13 @@ def test_table_to_md_keeps_nt_marker():
 def test_table_to_md_escapes_normal_cell():
     md = table_to_md([["a|b", "c"]])
     assert r"a\|b" in md
+
+
+def test_bbox_area():
+    assert bbox_area((0, 0, 10, 20)) == 200
+    assert bbox_area((10, 10, 10, 10)) == 0
+
+
+def test_bbox_near_equal():
+    assert bbox_near_equal((0, 0, 100, 100), (1, 1, 101, 99)) is True    # within margin
+    assert bbox_near_equal((0, 0, 100, 100), (0, 0, 100, 110)) is False  # 10 off

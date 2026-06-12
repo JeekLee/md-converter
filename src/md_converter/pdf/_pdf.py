@@ -10,7 +10,9 @@ from .diagram_utils import detect_diagram_bboxes, render_bbox_to_png
 from ._image_utils import extract_page_images, image_token
 from ._ocr import is_scanned_page, ocr_page
 from ._table_utils import (
+    bbox_area,
     bbox_in_cell,
+    bbox_near_equal,
     merge_overflow_tables,
     serialize_nt,
     table_to_md,
@@ -87,6 +89,11 @@ def resolve_nested(page, tables):
         best = None
         for pi in range(n):
             if pi == si:
+                continue
+            parent_bbox = tables[pi].bbox
+            # a genuine parent is a strictly larger, distinct region; skip near-duplicate
+            # regions (handled by merge dedup, not nesting) to avoid mutual suppression
+            if bbox_near_equal(parent_bbox, sub_bbox) or bbox_area(parent_bbox) <= bbox_area(sub_bbox):
                 continue
             for ri, row in enumerate(tables[pi].rows):
                 for ci, cell in enumerate(row.cells):
