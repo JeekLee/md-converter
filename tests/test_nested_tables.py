@@ -78,3 +78,19 @@ def test_text_plus_marker_in_same_cell():
 def test_no_marker_passthrough():
     md = "| A | B |\n| --- | --- |\n| 1 | 2 |"
     assert extract_nested_tables(md) == md
+
+
+def test_two_markers_in_same_cell():
+    md = "| 항목 | 값 |\n| --- | --- |\n| 합계 | [[NT:x;y]] [[NT:z;w]] |"
+    out = extract_nested_tables(md)
+    assert "| 합계 | → 표 1 → 표 2 |" in out
+    assert "**[표 1]**" in out and "**[표 2]**" in out
+
+
+def test_empty_nested_table_pipe_shape_dropped():
+    # The HWPX parser emits [[NT:|]] (empty cells joined by |) for an empty
+    # nested table; it must be treated as empty and dropped.
+    md = "| a | [[NT:|]] |"
+    out = extract_nested_tables(md)
+    assert "[[NT:" not in out
+    assert "표 1" not in out

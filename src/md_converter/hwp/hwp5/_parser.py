@@ -256,7 +256,7 @@ def parse(data: bytes) -> tuple[str, list[ImageItem]]:
 def convert(data: bytes) -> str:
     """Convert HWP5 bytes to Markdown (text + tables; images dropped).
 
-    For full pipeline with image upload and LLM restructuring,
+    For full pipeline with image upload and nested-table separation,
     use md_converter.MdConverter instead.
     """
     md, _ = parse(data)

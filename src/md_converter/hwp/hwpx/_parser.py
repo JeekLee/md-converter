@@ -29,7 +29,7 @@ def parse(data: bytes) -> tuple[str, list[ImageItem]]:
     """Convert HWPX bytes to (markdown_with_placeholders, image_list).
 
     Image placeholders in markdown: [[RHWP_IMAGE:{idx}]]
-    Tables → GFM. Nested tables → [[NT:...]] (for LLM restructuring).
+    Tables → GFM. Nested tables → [[NT:...]] markers (separated downstream by extract_nested_tables, no LLM).
     """
     parts: list[str] = []
     images: list[ImageItem] = []
@@ -82,7 +82,7 @@ def parse(data: bytes) -> tuple[str, list[ImageItem]]:
 def convert(data: bytes) -> str:
     """Convert HWPX bytes to Markdown (text + tables only, images dropped).
 
-    For full pipeline with image upload and LLM table restructuring,
+    For full pipeline with image upload and nested-table separation,
     use md_converter.MdConverter instead.
     """
     md, _ = parse(data)

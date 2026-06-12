@@ -214,3 +214,10 @@ CTRL_HEADER(tbl) @L      → push ctx0 (ctrl_lvl=L)
 | `src/md_converter/llm.py` | 중첩 표용 LLM 코드 제거 (drawing/vision 유지) |
 | `src/md_converter/hwp/hwpx/_table_utils.py` | 변경 없음 (이미 `[[NT:]]` 생성) |
 | `tests/` | 단위 + 회귀 + HWP5 픽스처 |
+
+## 구현 후 보정 (2026-06-12)
+
+구현/검증 중 발견해 반영한 두 가지 명확화:
+
+- **HWPX depth-2 평탄화 패리티.** 본 문서 비목표 항목은 "더 깊은 중첩은 평탄 텍스트로 두며 현재 HWPX _cell_plain_text 동작과 동일"이라고 적었으나, 실제 _cell_plain_text는 이중 중첩 표를 내려가지 않고 버리고 있었다(HWP5는 평탄화해 보존). 의도(평탄화 보존)에 맞춰 hwp/hwpx/_table_utils.py의 _cell_plain_text가 셀 내부의 더 깊은 tbl을 재귀적으로 평탄화하도록 수정했다. 이제 두 백엔드 모두 depth-2+ 내용을 보존한다.
+- **extract_nested_tables 블록 게이팅.** 본문은 "블록이 GFM 표이고 [[NT:를 포함하면"이라고 적었으나, 구현은 마커를 포함한 모든 블록을 처리한다(파서는 셀 안에서만 마커를 생성하므로 무해하며 더 일반적). 의도된 동작이다.

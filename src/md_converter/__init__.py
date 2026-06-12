@@ -4,7 +4,7 @@
 
     converter = MdConverter(
         images=LocalImages("images"),   # or S3Config(...), or None
-        llm=LlmConfig(...),             # or None to skip nested-table restructuring
+        llm=LlmConfig(...),             # required — drawing/diagram → Mermaid, scanned-PDF OCR
     )
     md = converter.convert("document.hwp")
     md = converter.convert("document.hwpx")
@@ -40,8 +40,8 @@ class MdConverter:
     """HWP / HWPX → Markdown converter.
 
     Args:
-        llm:    LlmConfig (required) — used for nested-table restructuring
-                and drawing → Mermaid conversion.
+        llm:    LlmConfig (required) — drawing/diagram → Mermaid conversion
+                and scanned-PDF OCR (vision). Nested tables no longer use the LLM.
         images: Where to put extracted images.
                 S3Config    — upload to S3/MinIO, embed as s3:// URL.
                 LocalImages — write to a local directory, embed as a file path.

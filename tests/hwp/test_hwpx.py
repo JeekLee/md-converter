@@ -215,3 +215,29 @@ def test_nested_table_separated_via_converter():
     assert "**[표 1]**" in md
     assert "| 항목 | 금액 |" in md
     assert "| 외래 | 1000 |" in md
+
+
+def test_depth2_nested_table_flattened_via_converter():
+    from md_converter import MdConverter, LlmConfig
+
+    def _tc(text: str) -> str:
+        return f"<hp:tc><hp:subList><hp:p><hp:run><hp:t>{text}</hp:t></hp:run></hp:p></hp:subList></hp:tc>"
+
+    def _tc_tbl(inner_tbl: str) -> str:
+        return f"<hp:tc><hp:subList><hp:p><hp:run>{inner_tbl}</hp:run></hp:p></hp:subList></hp:tc>"
+
+    depth2 = f"<hp:tbl><hp:tr>{_tc('L2leaf')}</hp:tr></hp:tbl>"
+    depth1 = f"<hp:tbl><hp:tr>{_tc('d1cell')}{_tc_tbl(depth2)}</hp:tr></hp:tbl>"
+    outer = (
+        "<hp:p><hp:run><hp:tbl>"
+        f"<hp:tr>{_tc('구분')}{_tc_tbl(depth1)}</hp:tr>"
+        "</hp:tbl></hp:run></hp:p>"
+    )
+    xml = _sec(outer)
+    md = MdConverter(llm=LlmConfig(url="http://unused.invalid", api_key="x", model="x")).convert(
+        _make_hwpx(xml), suffix=".hwpx"
+    )
+    # depth-2 leaf content must be flattened into the separated table, not dropped
+    assert "L2leaf" in md
+    assert "→ 표 1" in md
+    assert "**[표 1]**" in md
