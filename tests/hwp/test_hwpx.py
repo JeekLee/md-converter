@@ -136,6 +136,36 @@ def test_drawing_without_text_ignored():
     assert "텍스트" in md
 
 
+def test_drawing_with_connection_emits_mermaid():
+    """hp:connectLine이 있으면 hwp-drawing 대신 mermaid 블록을 emit한다."""
+    xml = _sec(
+        '<hp:p>'
+        '<hp:rect id="1"><hp:drawText><hp:subList>'
+        '<hp:p><hp:run><hp:t>시작</hp:t></hp:run></hp:p>'
+        '</hp:subList></hp:drawText></hp:rect>'
+        '<hp:rect id="2"><hp:drawText><hp:subList>'
+        '<hp:p><hp:run><hp:t>종료</hp:t></hp:run></hp:p>'
+        '</hp:subList></hp:drawText></hp:rect>'
+        '<hp:connectLine startConnectShapeId="1" endConnectShapeId="2" endArrow="arrow"/>'
+        '</hp:p>'
+    )
+    md, _ = parse(_make_hwpx(xml))
+    assert "```mermaid" in md
+    assert "```hwp-drawing" not in md
+    assert "시작" in md
+    assert "종료" in md
+
+
+def test_drawing_without_connection_keeps_hwp_drawing():
+    """hp:connectLine 없으면 기존 hwp-drawing 블록을 emit한다."""
+    xml = _sec(
+        f'<hp:p>{_rect("레이블A")}{_rect("레이블B")}</hp:p>',
+    )
+    md, _ = parse(_make_hwpx(xml))
+    assert "```hwp-drawing" in md
+    assert "```mermaid" not in md
+
+
 def test_real_hira_hwpx(tmp_path):
     """Smoke test against a real HIRA HWPX file (skipped if not present)."""
     sample = tmp_path.parent.parent / "test_hira.hwpx"
