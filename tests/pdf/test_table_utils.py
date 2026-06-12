@@ -143,3 +143,55 @@ def test_non_table_text_passthrough():
     assert "# 제목" in result
     assert "일반 텍스트" in result
     assert "가나다" in result
+
+
+# ── nested-containment helpers ────────────────────────────────────────────────
+
+from md_converter.pdf._table_utils import (
+    _clean_cell,
+    bbox_in_cell,
+    serialize_nt,
+)
+
+
+def test_clean_cell_no_escape():
+    assert _clean_cell("a|b") == "a|b"          # NO pipe escaping
+    assert _clean_cell(None) == ""
+
+
+def test_cell_text_unchanged_regression():
+    # refactoring _cell_text on top of _clean_cell must not change its output
+    assert _cell_text("a|b") == r"a\|b"
+    assert _cell_text("보 험 인 정") == "보험인정"
+    assert _cell_text(None) == ""
+
+
+def test_serialize_nt_basic():
+    assert serialize_nt([["항목", "금액"], ["외래", "1000"]]) == "[[NT:항목|금액;외래|1000]]"
+
+
+def test_serialize_nt_empty():
+    assert serialize_nt([[None, ""], ["  ", None]]) == ""
+
+
+def test_serialize_nt_cleans_cells():
+    # CJK char-spacing collapsed inside the marker, no escaping
+    assert serialize_nt([["보 험", "인 정"]]) == "[[NT:보험|인정]]"
+
+
+def test_bbox_in_cell():
+    cell = (10, 10, 100, 100)
+    assert bbox_in_cell((20, 20, 80, 80), cell) is True
+    assert bbox_in_cell((9, 20, 80, 80), cell, tol=2) is True    # within tolerance
+    assert bbox_in_cell((5, 20, 80, 80), cell, tol=2) is False   # x0 too far outside
+    assert bbox_in_cell((20, 20, 120, 80), cell) is False        # x1 outside
+
+
+def test_table_to_md_keeps_nt_marker():
+    md = table_to_md([["a", "pre [[NT:x|y;z|w]] post"]])
+    assert "pre [[NT:x|y;z|w]] post" in md      # marker cell passed through, pipes intact
+
+
+def test_table_to_md_escapes_normal_cell():
+    md = table_to_md([["a|b", "c"]])
+    assert r"a\|b" in md

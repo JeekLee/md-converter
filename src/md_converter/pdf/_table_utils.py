@@ -29,7 +29,9 @@ def _join_lines(text: str) -> str:
     return out
 
 
-def _cell_text(cell: str | None) -> str:
+def _clean_cell(cell: str | None) -> str:
+    """Cell text cleaning WITHOUT pipe escaping: join PDF line-wraps + remove
+    CJK char-spacing artifacts. Used by _cell_text and by serialize_nt."""
     if cell is None:
         return ""
     text = _join_lines(cell)
@@ -40,7 +42,40 @@ def _cell_text(cell: str | None) -> str:
         lambda m: m.group(0).replace(" ", ""),
         text,
     )
-    return text.replace("|", "\\|").strip()
+    return text.strip()
+
+
+def _cell_text(cell: str | None) -> str:
+    return _clean_cell(cell).replace("|", "\\|")
+
+
+def serialize_nt(rows: list[list[str | None]]) -> str:
+    """Serialize a nested sub-table's rows to the shared [[NT:row;row]] marker.
+
+    Cells are cleaned (line-join + CJK spacing) but NOT pipe-escaped, since
+    '|' and ';' are the marker's own separators. Returns '' if all cells blank.
+    """
+    if not any((c or "").strip() for row in rows for c in row):
+        return ""
+    return "[[NT:" + ";".join("|".join(_clean_cell(c) for c in row) for row in rows) + "]]"
+
+
+def bbox_in_cell(
+    sub_bbox: tuple[float, float, float, float],
+    cell_bbox: tuple[float, float, float, float],
+    tol: float = 2.0,
+) -> bool:
+    """True if sub_bbox is fully inside cell_bbox within tol. bbox = (x0, top, x1, bottom)."""
+    sx0, st, sx1, sb = sub_bbox
+    cx0, ct, cx1, cb = cell_bbox
+    return sx0 >= cx0 - tol and sx1 <= cx1 + tol and st >= ct - tol and sb <= cb + tol
+
+
+def _escape_cell_for_table(s: str | None) -> str:
+    """Leave [[NT:...]] marker cells intact (so the marker survives); escape others."""
+    if s is not None and "[[NT:" in s:
+        return s
+    return _cell_text(s)
 
 
 # ── GFM table rendering ───────────────────────────────────────────────────────
@@ -52,7 +87,7 @@ def table_to_md(rows: list[list[str | None]]) -> str:
     col_count = max(len(r) for r in rows)
     norm = []
     for row in rows:
-        cells = [_cell_text(c) for c in row]
+        cells = [_escape_cell_for_table(c) for c in row]
         while len(cells) < col_count:
             cells.append("")
         norm.append(cells)
