@@ -11,9 +11,9 @@ license = { text = "MIT" }
 [project.optional-dependencies]
 hwp5      = ["olefile>=0.47"]
 images    = ["Pillow>=10.0"]          # BMP → PNG conversion
-pdf       = ["pdfplumber>=0.11", "pypdf>=4.0", "Pillow>=10.0"]
-pdf-ocr   = ["pdfplumber>=0.11", "pypdf>=4.0", "Pillow>=10.0", "pytesseract>=0.3"]
-dev       = ["pytest>=8", "olefile>=0.47", "Pillow>=10.0", "pdfplumber>=0.11", "pypdf>=4.0"]
+pdf       = ["pdfplumber>=0.11", "pypdf>=4.0", "Pillow>=10.0", "pymupdf>=1.23"]
+pdf-ocr   = ["pdfplumber>=0.11", "pypdf>=4.0", "Pillow>=10.0", "pytesseract>=0.3", "pymupdf>=1.23"]
+dev       = ["pytest>=8", "olefile>=0.47", "Pillow>=10.0", "pdfplumber>=0.11", "pypdf>=4.0", "pymupdf>=1.23"]
 
 [build-system]
 requires = ["hatchling"]
