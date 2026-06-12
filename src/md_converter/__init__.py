@@ -4,7 +4,7 @@
 
     converter = MdConverter(
         images=LocalImages("images"),   # or S3Config(...), or None
-        llm=LlmConfig(...),             # or None to skip nested-table restructuring
+        llm=LlmConfig(...),             # required — drawing/diagram → Mermaid, scanned-PDF OCR
     )
     md = converter.convert("document.hwp")
     md = converter.convert("document.hwpx")
@@ -19,7 +19,8 @@ from pathlib import Path
 
 from ._common import ImageItem
 from .hwp import parse_hwp5 as _hwp5_parse, parse_hwpx as _hwpx_parse
-from .llm import LlmConfig, drawing_to_mermaid, restructure_nested_tables, vision_to_mermaid
+from .llm import LlmConfig, drawing_to_mermaid, vision_to_mermaid, vision_to_text
+from .nested_tables import extract_nested_tables
 from .pdf import parse as _pdf_parse
 from .s3 import S3Config, put_object
 
@@ -39,8 +40,8 @@ class MdConverter:
     """HWP / HWPX → Markdown converter.
 
     Args:
-        llm:    LlmConfig (required) — used for nested-table restructuring
-                and drawing → Mermaid conversion.
+        llm:    LlmConfig (required) — drawing/diagram → Mermaid conversion
+                and scanned-PDF OCR (vision). Nested tables no longer use the LLM.
         images: Where to put extracted images.
                 S3Config    — upload to S3/MinIO, embed as s3:// URL.
                 LocalImages — write to a local directory, embed as a file path.
@@ -86,14 +87,14 @@ class MdConverter:
         elif s == ".hwp":
             md, image_items = _hwp5_parse(data)
         elif s == ".pdf":
-            md, image_items = _pdf_parse(data)
+            md, image_items = _pdf_parse(data, llm=self._llm)
         else:
             raise ValueError(f"Unsupported format: {ext!r} (expected '.hwp', '.hwpx', or '.pdf')")
 
         md = self._process_diagram_images(md, image_items)
         md = self._process_images(md, image_items)
         md = self._process_drawings(md)
-        md = restructure_nested_tables(md, self._llm)
+        md = extract_nested_tables(md)
 
         return md
 

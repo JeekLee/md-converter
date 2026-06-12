@@ -182,3 +182,115 @@ def test_real_hwp5_with_images(tmp_path):
     assert "보건복지부" in md
     # No stray ASCII junk from control char parameter bytes
     assert "捤" not in md
+
+
+# ── nested-table serialization helpers ────────────────────────────────────────
+
+from md_converter.hwp.hwp5._table_utils import (
+    _serialize_flat,
+    _serialize_nt,
+    table_to_md,
+)
+
+
+def test_serialize_nt_basic():
+    assert _serialize_nt([["a", "b"], ["c", "d"]]) == "[[NT:a|b;c|d]]"
+
+
+def test_serialize_nt_empty_returns_blank():
+    assert _serialize_nt([["", ""]]) == ""
+
+
+def test_serialize_flat_joins_cells():
+    assert _serialize_flat([["a", "b"], ["c"]]) == "a b c"
+
+
+def test_table_to_md_keeps_nt_marker_pipes_intact():
+    # A cell holding an [[NT:]] marker must NOT have its internal pipes escaped,
+    # otherwise extract_nested_tables can't parse it.
+    md = table_to_md([["[[NT:a|b;c|d]]"]])
+    assert "[[NT:a|b;c|d]]" in md
+    assert "\\|" not in md
+
+
+def test_table_to_md_escapes_normal_cell_pipes():
+    md = table_to_md([["a|b"]])
+    assert "a\\|b" in md
+
+
+# ── _parse_section: nested table ──────────────────────────────────────────────
+
+def _u16(s: str) -> bytes:
+    return s.encode("utf-16-le")
+
+
+def _table_ctrl(level: int) -> bytes:
+    # CTRL_HEADER with ctrl_id b" lbt" + 8 padding bytes
+    return _make_record(0x47, level, b" lbt" + b"\x00" * 8)
+
+
+def test_nested_table_serialized_into_parent_cell():
+    """A table inside a cell becomes an [[NT:]] marker; outer rows are NOT lost."""
+    rec = b""
+    rec += _table_ctrl(0)                                   # outer table @0
+    rec += _make_record(0x4D, 1, b"\x00" * 4 + _struct.pack("<2H", 2, 2))  # TABLE_BODY
+    rec += _make_record(0x48, 1, _list_header_payload(0, 0)) + _make_record(0x43, 2, _u16("구분"))
+    rec += _make_record(0x48, 1, _list_header_payload(0, 1)) + _make_record(0x43, 2, _u16("세부"))
+    rec += _make_record(0x48, 1, _list_header_payload(1, 0)) + _make_record(0x43, 2, _u16("본인부담"))
+    # outer cell (1,1) holds text + a nested 2x2 table
+    rec += _make_record(0x48, 1, _list_header_payload(1, 1)) + _make_record(0x43, 2, _u16("상세"))
+    rec += _table_ctrl(2)                                   # nested table @2
+    rec += _make_record(0x4D, 3, b"\x00" * 4 + _struct.pack("<2H", 2, 2))
+    rec += _make_record(0x48, 3, _list_header_payload(0, 0)) + _make_record(0x43, 4, _u16("항목"))
+    rec += _make_record(0x48, 3, _list_header_payload(0, 1)) + _make_record(0x43, 4, _u16("금액"))
+    rec += _make_record(0x48, 3, _list_header_payload(1, 0)) + _make_record(0x43, 4, _u16("외래"))
+    rec += _make_record(0x48, 3, _list_header_payload(1, 1)) + _make_record(0x43, 4, _u16("1000"))
+    rec += _make_record(0x42, 0, b"")                       # PARA_HEADER @0 closes all
+
+    parts = _parse_section(rec, {}, {}, [])
+
+    assert len(parts) == 1, f"expected 1 outer table, got {len(parts)}: {parts}"
+    table = parts[0]
+    # nested table serialized as [[NT:]] with pipes intact (not escaped)
+    assert "[[NT:항목|금액;외래|1000]]" in table
+    # outer content preserved — bug fix: outer rows not overwritten
+    assert "구분" in table and "세부" in table and "본인부담" in table
+    data_rows = [l for l in table.splitlines() if l.startswith("|") and "---" not in l]
+    assert len(data_rows) == 2, f"outer table should keep 2 rows:\n{table}"
+
+
+def test_nested_table_end_to_end_separation():
+    """parser → extract_nested_tables yields a referenced standalone table."""
+    from md_converter.nested_tables import extract_nested_tables
+
+    rec = b""
+    rec += _table_ctrl(0)
+    rec += _make_record(0x48, 1, _list_header_payload(0, 0)) + _make_record(0x43, 2, _u16("머리"))
+    rec += _make_record(0x48, 1, _list_header_payload(1, 0)) + _make_record(0x43, 2, _u16("본문"))
+    rec += _table_ctrl(2)
+    rec += _make_record(0x48, 3, _list_header_payload(0, 0)) + _make_record(0x43, 4, _u16("k"))
+    rec += _make_record(0x48, 3, _list_header_payload(1, 0)) + _make_record(0x43, 4, _u16("v"))
+    rec += _make_record(0x42, 0, b"")
+
+    md = extract_nested_tables("\n\n".join(_parse_section(rec, {}, {}, [])))
+    assert "→ 표 1" in md
+    assert "**[표 1]**" in md
+    assert "[[NT:" not in md
+
+
+def test_deeply_nested_table_flattened():
+    """A table nested 2 levels deep is flattened to text (only depth-1 → [[NT:]])."""
+    rec = b""
+    rec += _table_ctrl(0)                                            # outer @0
+    rec += _make_record(0x48, 1, _list_header_payload(0, 0)) + _make_record(0x43, 2, _u16("L0"))
+    rec += _table_ctrl(2)                                            # mid @2 (depth 1)
+    rec += _make_record(0x48, 3, _list_header_payload(0, 0)) + _make_record(0x43, 4, _u16("L1"))
+    rec += _table_ctrl(4)                                            # inner @4 (depth 2)
+    rec += _make_record(0x48, 5, _list_header_payload(0, 0)) + _make_record(0x43, 6, _u16("L2"))
+    rec += _make_record(0x42, 0, b"")                                # close all
+
+    parts = _parse_section(rec, {}, {}, [])
+    table = parts[0]
+    # only ONE marker — the depth-2 table was flattened into the depth-1 marker
+    assert table.count("[[NT:") == 1
+    assert "[[NT:L1 L2]]" in table

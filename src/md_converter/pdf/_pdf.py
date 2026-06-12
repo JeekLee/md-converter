@@ -13,6 +13,7 @@ from ._table_utils import merge_overflow_tables, table_to_md
 
 if TYPE_CHECKING:
     import pdfplumber
+    from ..llm import LlmConfig
 
 _PAGE_NUM_RE = re.compile(r"(?m)^\s*(?:-\s*)?\d+\s*(?:-\s*)?$")
 
@@ -72,7 +73,7 @@ def _page_items_ordered(
     return [(s[0], s[2]) for s in segments]
 
 
-def parse(data: bytes) -> tuple[str, list[ImageItem]]:
+def parse(data: bytes, llm: "LlmConfig | None" = None) -> tuple[str, list[ImageItem]]:
     """Parse a PDF and return (markdown_string, image_items).
 
     Requires ``pdfplumber`` and ``pypdf`` (``pip install 'md-converter[pdf]'``).
@@ -102,7 +103,20 @@ def parse(data: bytes) -> tuple[str, list[ImageItem]]:
 
             # ── Scanned page: no text layer, full-page image ──────────────────
             if is_scanned_page(page):
-                ocr_text = ocr_page(data, page_idx)
+                ocr_text = ""
+                if llm is not None:
+                    try:
+                        from ..llm import vision_to_text
+                        png = render_bbox_to_png(data, page_idx, (0, 0, page.width, page.height))
+                        ocr_text = vision_to_text(png, llm)
+                        if ocr_text:
+                            import sys
+                            sys.stderr.write(f"  VLM OCR page {page_idx}: {len(ocr_text)} chars\n")
+                    except Exception as exc:
+                        import sys
+                        sys.stderr.write(f"  VLM OCR failed (page {page_idx}): {exc}\n")
+                if not ocr_text:
+                    ocr_text = ocr_page(data, page_idx)
                 if ocr_text.strip():
                     parts.append(ocr_text.strip())
                 continue

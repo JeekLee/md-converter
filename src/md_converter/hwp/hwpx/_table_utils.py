@@ -8,15 +8,28 @@ from ._xml import _para_text, _q
 
 
 def _cell_plain_text(tc: ET.Element) -> str:
-    """Flat text from hp:tc — used for inner cells of nested tables."""
+    """Flat text from hp:tc — used for inner cells of nested tables.
+
+    A table nested two or more levels deep (a tbl inside this inner cell) is
+    flattened to plain text here rather than dropped, so depth>=2 content is
+    preserved — matching the HWP5 backend and the spec depth>=2 behaviour.
+    """
     sub = tc.find(_q("subList"))
     if sub is None:
         return ""
     parts = []
     for p in sub.findall(_q("p")):
-        t = _para_text(p).strip()
-        if t:
-            parts.append(t)
+        tbl = p.find(f".//{_q('tbl')}")
+        if tbl is not None:
+            for tr in tbl.findall(_q("tr")):
+                for tc2 in tr.findall(_q("tc")):
+                    t = _cell_plain_text(tc2).strip()
+                    if t:
+                        parts.append(t)
+        else:
+            t = _para_text(p).strip()
+            if t:
+                parts.append(t)
     return " ".join(parts)
 
 
