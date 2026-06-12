@@ -20,8 +20,9 @@ _TAG_PARA_TEXT     = 0x43  # 67  — paragraph text (UTF-16LE)
 _TAG_CTRL_HEADER   = 0x47  # 71  — inline control (table, GSO, …)
 _TAG_LIST_HEADER   = 0x48  # 72  — cell boundary inside a table
 _TAG_TABLE_BODY    = 0x4D  # 77  — table body (row/col counts at bytes 4-7)
-_TAG_SHAPE_PICTURE = 0x55  # 85  — picture shape (bin_data_id at offset 71)
-_TAG_SHAPE_COMPONENT = 0x58  # 88 — shape component (type at byte 0)
+_TAG_SHAPE_PICTURE        = 0x55  # 85  — picture shape (bin_data_id at offset 71)
+_TAG_SHAPE_COMPONENT      = 0x4C  # 76  — shape component (ctrl_id at byte 0-3)
+_TAG_SHAPE_COMPONENT_LINE = 0x4E  # 78  — line/connector shape data
 
 # Control IDs: LE DWORD in CTRL_HEADER payload[0:4].
 # ctrl_id is big-endian ASCII stored as little-endian bytes.
