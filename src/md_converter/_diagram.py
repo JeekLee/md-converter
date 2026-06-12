@@ -43,10 +43,10 @@ def graph_to_mermaid(graph: DiagramGraph) -> str | None:
         node = node_map.get(node_id)
         if node is None:
             return f"n{node_id}"
-        label = node.label.replace('"', "'")
         if node_id in emitted:
             return f"n{node_id}"
         emitted.add(node_id)
+        label = node.label.replace('"', "'")
         shape = _MERMAID_SHAPE.get(node.shape_type, "[{label}]").format(label=label)
         return f"n{node_id}{shape}"
 
