@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import TYPE_CHECKING
 
 from .._common import ImageItem
@@ -20,6 +21,8 @@ from ._table_utils import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     import pdfplumber
     from ..llm import LlmConfig
 
@@ -183,15 +186,72 @@ def _page_items_ordered(
     return [(s[0], s[2]) for s in segments]
 
 
-def parse(data: bytes, llm: "LlmConfig | None" = None) -> tuple[str, list[ImageItem]]:
+def _ocr_one(png: bytes, page_idx: int, data: bytes, llm: "LlmConfig | None") -> str:
+    """OCR a single pre-rendered scanned page: vision LLM, then pytesseract fallback."""
+    import sys
+    text = ""
+    if llm is not None:
+        try:
+            from ..llm import vision_to_text
+            text = vision_to_text(png, llm)
+            if text:
+                sys.stderr.write(f"  VLM OCR page {page_idx}: {len(text)} chars\n")
+        except Exception as exc:
+            sys.stderr.write(f"  VLM OCR failed (page {page_idx}): {exc}\n")
+    if not text:
+        text = ocr_page(data, page_idx)
+    return text or ""
+
+
+def _ocr_pages(
+    scanned: "list[tuple[int, bytes]]",
+    data: bytes,
+    llm: "LlmConfig | None",
+    max_workers: int | None,
+    ocr_fn: "Callable[[bytes, int], str] | None" = None,
+) -> dict[int, str]:
+    """OCR pre-rendered scanned pages, concurrently when max_workers >= 2.
+
+    scanned: list[(page_idx, png_bytes)].
+    ocr_fn:  injectable (png, page_idx) -> str for tests; default calls _ocr_one.
+    Returns {page_idx: text}. Per-page failures are isolated to "".
+    """
+    if not scanned:
+        return {}
+    fn = ocr_fn or (lambda png, idx: _ocr_one(png, idx, data, llm))
+
+    if max_workers is None or max_workers <= 1 or len(scanned) == 1:
+        out: dict[int, str] = {}
+        for idx, png in scanned:
+            try:
+                out[idx] = fn(png, idx)
+            except Exception:
+                out[idx] = ""
+        return out
+
+    workers = min(max_workers, len(scanned))
+    results: dict[int, str] = {}
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        future_to_idx = {ex.submit(fn, png, idx): idx for idx, png in scanned}
+        for fut in as_completed(future_to_idx):
+            idx = future_to_idx[fut]
+            try:
+                results[idx] = fut.result()
+            except Exception:
+                results[idx] = ""
+    return results
+
+
+def parse(data: bytes, llm: "LlmConfig | None" = None, max_ocr_workers: int = 4) -> tuple[str, list[ImageItem]]:
     """Parse a PDF and return (markdown_string, image_items).
 
     Requires ``pdfplumber`` and ``pypdf`` (``pip install 'md-converter[pdf]'``).
 
-    - Text PDFs (generated from HWP/HWPX): text + tables extracted; embedded
-      non-trivial images returned as ImageItem list with [[RHWP_IMAGE:N]] tokens.
-    - Scanned PDFs (no text layer): OCR via pytesseract when available, otherwise
-      the page is skipped with an empty string.
+    - Text PDFs: text + tables extracted; embedded non-trivial images returned
+      as ImageItem list with [[RHWP_IMAGE:N]] tokens.
+    - Scanned PDFs (no text layer): each page is rendered (main thread) and OCR'd
+      via the vision LLM; OCR runs concurrently across pages when max_ocr_workers
+      >= 2 (pytesseract fallback when no LLM result). Output order is by page.
 
     Tables are rendered as GFM and adjacent continuation / overflow / duplicate
     tables are merged post-extraction.
@@ -206,29 +266,22 @@ def parse(data: bytes, llm: "LlmConfig | None" = None) -> tuple[str, list[ImageI
 
     all_images: list[ImageItem] = []
     img_counter = 1
-    parts: list[str] = []
 
     with pdfplumber.open(io.BytesIO(data)) as pdf:
+        n_pages = len(pdf.pages)
+        page_parts: list[list[str]] = [[] for _ in range(n_pages)]
+        scanned: list[tuple[int, bytes]] = []
+
         for page_idx, page in enumerate(pdf.pages):
 
-            # ── Scanned page: no text layer, full-page image ──────────────────
+            # ── Scanned page: render now (main thread; fitz isn't thread-safe) ──
             if is_scanned_page(page):
-                ocr_text = ""
-                if llm is not None:
-                    try:
-                        from ..llm import vision_to_text
-                        png = render_bbox_to_png(data, page_idx, (0, 0, page.width, page.height))
-                        ocr_text = vision_to_text(png, llm)
-                        if ocr_text:
-                            import sys
-                            sys.stderr.write(f"  VLM OCR page {page_idx}: {len(ocr_text)} chars\n")
-                    except Exception as exc:
-                        import sys
-                        sys.stderr.write(f"  VLM OCR failed (page {page_idx}): {exc}\n")
-                if not ocr_text:
-                    ocr_text = ocr_page(data, page_idx)
-                if ocr_text.strip():
-                    parts.append(ocr_text.strip())
+                try:
+                    png = render_bbox_to_png(data, page_idx, (0, 0, page.width, page.height))
+                    scanned.append((page_idx, png))
+                except Exception as exc:
+                    import sys
+                    sys.stderr.write(f"  scanned render failed (page {page_idx}): {exc}\n")
                 continue
 
             # ── Normal page: extract embedded images ──────────────────────────
@@ -275,7 +328,15 @@ def parse(data: bytes, llm: "LlmConfig | None" = None) -> tuple[str, list[ImageI
 
             for _, chunk in _page_items_ordered(page, tables, img_tokens):
                 if chunk.strip():
-                    parts.append(chunk.strip())
+                    page_parts[page_idx].append(chunk.strip())
+
+        # ── Scanned-page OCR (HTTP-bound) — concurrent across pages ───────────
+        ocr_by_idx = _ocr_pages(scanned, data, llm, max_ocr_workers)
+        for page_idx, text in ocr_by_idx.items():
+            if text.strip():
+                page_parts[page_idx].append(text.strip())
+
+        parts = [chunk for pp in page_parts for chunk in pp]
 
     md = "\n\n".join(parts)
     md = merge_overflow_tables(md)

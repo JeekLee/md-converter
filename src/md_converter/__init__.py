@@ -46,6 +46,7 @@ class MdConverter:
                 S3Config    — upload to S3/MinIO, embed as s3:// URL.
                 LocalImages — write to a local directory, embed as a file path.
                 None (default) — drop images.
+        ocr_workers: max concurrent scanned-PDF OCR calls (default 4; <=1 = sequential).
     """
 
     def __init__(
@@ -53,9 +54,11 @@ class MdConverter:
         *,
         llm: LlmConfig,
         images: S3Config | LocalImages | None = None,
+        ocr_workers: int = 4,
     ) -> None:
         self._images = images
         self._llm = llm
+        self._ocr_workers = ocr_workers
 
     def convert(
         self,
@@ -87,7 +90,7 @@ class MdConverter:
         elif s == ".hwp":
             md, image_items = _hwp5_parse(data)
         elif s == ".pdf":
-            md, image_items = _pdf_parse(data, llm=self._llm)
+            md, image_items = _pdf_parse(data, llm=self._llm, max_ocr_workers=self._ocr_workers)
         else:
             raise ValueError(f"Unsupported format: {ext!r} (expected '.hwp', '.hwpx', or '.pdf')")
 
