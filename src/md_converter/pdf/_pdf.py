@@ -265,7 +265,6 @@ def parse(data: bytes, llm: "LlmConfig | None" = None, max_ocr_workers: int = 4)
 
     all_images: list[ImageItem] = []
     img_counter = 1
-    parts: list[str] = []
 
     with pdfplumber.open(io.BytesIO(data)) as pdf:
         n_pages = len(pdf.pages)
