@@ -53,3 +53,43 @@ def test_ocr_pages_empty():
 def test_ocr_pages_single_uses_sequential():
     res = _ocr_pages([(0, b"x")], b"", None, 4, ocr_fn=lambda png, idx: "ONE")
     assert res == {0: "ONE"}
+
+
+def _make_scanned_pdf(n_pages: int) -> bytes:
+    """A PDF whose pages are full-page images with no text layer (scanned-like)."""
+    import pytest
+    fitz = pytest.importorskip("fitz")
+    doc = fitz.open()
+    for _ in range(n_pages):
+        page = doc.new_page(width=300, height=400)
+        pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 300, 400))
+        pix.clear_with(240)
+        page.insert_image(fitz.Rect(0, 0, 300, 400), pixmap=pix)
+    return doc.tobytes()
+
+
+def test_parse_scanned_pdf_order_and_parallel_equiv(monkeypatch):
+    import io
+    import pytest
+    pytest.importorskip("fitz")
+    import pdfplumber
+    from md_converter.pdf import parse
+    import md_converter.pdf._pdf as pdfmod
+    from md_converter.pdf._ocr import is_scanned_page
+
+    data = _make_scanned_pdf(2)
+
+    # only meaningful if pdfplumber agrees both pages are scanned
+    with pdfplumber.open(io.BytesIO(data)) as pdf:
+        if not all(is_scanned_page(p) for p in pdf.pages):
+            pytest.skip("fitz-built PDF not detected as scanned by pdfplumber")
+
+    # mock the actual OCR; return page-specific text so we can check ordering
+    monkeypatch.setattr(pdfmod, "_ocr_one", lambda png, idx, data, llm: f"OCRPAGE{idx}")
+
+    md4, _ = parse(data, llm=object(), max_ocr_workers=4)
+    md1, _ = parse(data, llm=object(), max_ocr_workers=1)
+
+    assert "OCRPAGE0" in md4 and "OCRPAGE1" in md4
+    assert md4.index("OCRPAGE0") < md4.index("OCRPAGE1")   # page order preserved
+    assert md4 == md1                                       # parallel == sequential output
