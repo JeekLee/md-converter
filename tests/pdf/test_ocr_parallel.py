@@ -93,3 +93,20 @@ def test_parse_scanned_pdf_order_and_parallel_equiv(monkeypatch):
     assert "OCRPAGE0" in md4 and "OCRPAGE1" in md4
     assert md4.index("OCRPAGE0") < md4.index("OCRPAGE1")   # page order preserved
     assert md4 == md1                                       # parallel == sequential output
+
+
+def test_mdconverter_passes_ocr_workers(monkeypatch):
+    import md_converter as mc
+    from md_converter import MdConverter, LlmConfig
+
+    captured = {}
+
+    def fake_pdf_parse(data, llm=None, max_ocr_workers=4):
+        captured["max_ocr_workers"] = max_ocr_workers
+        return "ok", []
+
+    monkeypatch.setattr(mc, "_pdf_parse", fake_pdf_parse)
+    conv = MdConverter(llm=LlmConfig(url="x", api_key="x", model="x"), ocr_workers=7)
+    out = conv.convert(b"%PDF-1.4 fake", suffix=".pdf")
+    assert out == "ok"
+    assert captured["max_ocr_workers"] == 7
