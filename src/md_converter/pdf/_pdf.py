@@ -21,6 +21,8 @@ from ._table_utils import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     import pdfplumber
     from ..llm import LlmConfig
 
@@ -184,7 +186,7 @@ def _page_items_ordered(
     return [(s[0], s[2]) for s in segments]
 
 
-def _ocr_one(png: bytes, page_idx: int, data: bytes, llm) -> str:
+def _ocr_one(png: bytes, page_idx: int, data: bytes, llm: "LlmConfig | None") -> str:
     """OCR a single pre-rendered scanned page: vision LLM, then pytesseract fallback."""
     import sys
     text = ""
@@ -201,7 +203,13 @@ def _ocr_one(png: bytes, page_idx: int, data: bytes, llm) -> str:
     return text or ""
 
 
-def _ocr_pages(scanned, data: bytes, llm, max_workers: int, ocr_fn=None) -> dict[int, str]:
+def _ocr_pages(
+    scanned: "list[tuple[int, bytes]]",
+    data: bytes,
+    llm: "LlmConfig | None",
+    max_workers: int | None,
+    ocr_fn: "Callable[[bytes, int], str] | None" = None,
+) -> dict[int, str]:
     """OCR pre-rendered scanned pages, concurrently when max_workers >= 2.
 
     scanned: list[(page_idx, png_bytes)].
