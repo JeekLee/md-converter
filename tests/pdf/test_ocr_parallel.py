@@ -110,3 +110,36 @@ def test_mdconverter_passes_ocr_workers(monkeypatch):
     out = conv.convert(b"%PDF-1.4 fake", suffix=".pdf")
     assert out == "ok"
     assert captured["max_ocr_workers"] == 7
+
+
+def test_parse_mixed_text_and_scanned_pages_order(monkeypatch):
+    # text page, scanned page, text page → scanned OCR must land between them
+    import io
+    import pytest
+    fitz = pytest.importorskip("fitz")
+    import pdfplumber
+    from md_converter.pdf import parse
+    import md_converter.pdf._pdf as pdfmod
+    from md_converter.pdf._ocr import is_scanned_page
+
+    doc = fitz.open()
+    p0 = doc.new_page(width=300, height=400)
+    p0.insert_text((40, 60), "ALPHA " * 12, fontsize=12)
+    p1 = doc.new_page(width=300, height=400)
+    pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 300, 400))
+    pix.clear_with(240)
+    p1.insert_image(fitz.Rect(0, 0, 300, 400), pixmap=pix)
+    p2 = doc.new_page(width=300, height=400)
+    p2.insert_text((40, 60), "OMEGA " * 12, fontsize=12)
+    data = doc.tobytes()
+
+    with pdfplumber.open(io.BytesIO(data)) as pdf:
+        pages = pdf.pages
+        if is_scanned_page(pages[0]) or not is_scanned_page(pages[1]) or is_scanned_page(pages[2]):
+            pytest.skip("fitz pages not classified as text/scanned/text")
+
+    monkeypatch.setattr(pdfmod, "_ocr_one", lambda png, idx, data, llm: "MIDOCR")
+    md, _ = parse(data, llm=object(), max_ocr_workers=4)
+
+    assert "ALPHA" in md and "MIDOCR" in md and "OMEGA" in md
+    assert md.index("ALPHA") < md.index("MIDOCR") < md.index("OMEGA")

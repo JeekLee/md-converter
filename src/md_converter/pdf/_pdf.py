@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import io
 import re
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import TYPE_CHECKING
 
 from .._common import ImageItem
@@ -233,7 +233,8 @@ def _ocr_pages(
     results: dict[int, str] = {}
     with ThreadPoolExecutor(max_workers=workers) as ex:
         future_to_idx = {ex.submit(fn, png, idx): idx for idx, png in scanned}
-        for fut, idx in future_to_idx.items():
+        for fut in as_completed(future_to_idx):
+            idx = future_to_idx[fut]
             try:
                 results[idx] = fut.result()
             except Exception:
