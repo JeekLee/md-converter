@@ -9,7 +9,15 @@ from .._common import ImageItem
 from .diagram_utils import detect_diagram_bboxes, render_bbox_to_png
 from ._image_utils import extract_page_images, image_token
 from ._ocr import is_scanned_page, ocr_page
-from ._table_utils import merge_overflow_tables, table_to_md
+from ._table_utils import (
+    bbox_area,
+    bbox_in_cell,
+    bbox_near_equal,
+    merge_overflow_tables,
+    serialize_nt,
+    table_to_md,
+    _cell_text,
+)
 
 if TYPE_CHECKING:
     import pdfplumber
@@ -20,6 +28,105 @@ _PAGE_NUM_RE = re.compile(r"(?m)^\s*(?:-\s*)?\d+\s*(?:-\s*)?$")
 
 def _strip_page_numbers(text: str) -> str:
     return _PAGE_NUM_RE.sub("", text)
+
+
+def _crop_text(page, x0: float, top: float, x1: float, bottom: float) -> str:
+    """Extract cleaned text from a sub-region of the page; '' on any failure."""
+    if bottom - top <= 2 or x1 - x0 <= 2:
+        return ""
+    try:
+        crop = page.crop((x0, top, x1, bottom))
+        return (crop.extract_text(x_tolerance=3, y_tolerance=3) or "").strip()
+    except Exception:
+        return ""
+
+
+def _rebuild_cell(page, cell_bbox, sub_tables) -> str:
+    """Rebuild a parent cell as prefix + [[NT:...]] markers + suffix.
+
+    The cell's text is split into vertical bands around each nested sub-table
+    so surrounding text (above/below/between) is preserved, while each nested
+    table becomes a marker. Text bands are pipe-escaped (_cell_text); markers
+    are raw.
+    """
+    cx0, ct, cx1, cb = cell_bbox
+    subs = sorted(sub_tables, key=lambda t: t.bbox[1])  # top-to-bottom
+    parts: list[str] = []
+    y = ct
+    for sub in subs:
+        st, sb = sub.bbox[1], sub.bbox[3]
+        band = _crop_text(page, cx0, y, cx1, st)
+        if band:
+            parts.append(_cell_text(band))
+        nt = serialize_nt(sub.extract())
+        if nt:
+            parts.append(nt)
+        y = max(y, sb)
+    tail = _crop_text(page, cx0, y, cx1, cb)
+    if tail:
+        parts.append(_cell_text(tail))
+    return " ".join(p for p in parts if p)
+
+
+def resolve_nested(page, tables):
+    """Detect tables nested inside other tables' cells.
+
+    Returns (suppressed, overrides):
+      suppressed: set[int] — table indices contained in another table's cell
+                  (excluded from standalone rendering).
+      overrides:  dict[int, list[list[str]]] — for each top-level table that has
+                  nested children, the rebuilt rows with each child-holding cell
+                  replaced by prefix + [[NT:...]] + suffix.
+
+    Only one nesting level becomes a marker: deeper tables are still suppressed
+    and their content rides along as flattened text in the parent's extract().
+    """
+    n = len(tables)
+    # sub_idx -> (parent_idx, row_idx, col_idx, cell_area) for the smallest containing cell
+    contained: dict[int, tuple[int, int, int, float]] = {}
+    for si in range(n):
+        sub_bbox = tables[si].bbox
+        best = None
+        for pi in range(n):
+            if pi == si:
+                continue
+            parent_bbox = tables[pi].bbox
+            # a genuine parent is a strictly larger, distinct region; skip near-duplicate
+            # regions (handled by merge dedup, not nesting) to avoid mutual suppression
+            if bbox_near_equal(parent_bbox, sub_bbox) or bbox_area(parent_bbox) <= bbox_area(sub_bbox):
+                continue
+            for ri, row in enumerate(tables[pi].rows):
+                for ci, cell in enumerate(row.cells):
+                    if cell is None:
+                        continue
+                    if bbox_in_cell(sub_bbox, cell):
+                        area = (cell[2] - cell[0]) * (cell[3] - cell[1])
+                        if best is None or area < best[3]:
+                            best = (pi, ri, ci, area)
+        if best is not None:
+            contained[si] = best
+
+    suppressed = set(contained.keys())
+
+    # group children by (parent, cell), only where the parent is itself top-level
+    children: dict[int, dict[tuple[int, int], list[int]]] = {}
+    for si, (pi, ri, ci, _area) in contained.items():
+        if pi in suppressed:
+            continue  # parent is itself nested → this sub flattens into parent's extract()
+        children.setdefault(pi, {}).setdefault((ri, ci), []).append(si)
+
+    overrides: dict[int, list[list[str]]] = {}
+    for pi, cellmap in children.items():
+        rows = [list(r) for r in tables[pi].extract()]
+        for (ri, ci), sub_idxs in cellmap.items():
+            if ri >= len(rows) or ci >= len(rows[ri]):
+                continue
+            cell_bbox = tables[pi].rows[ri].cells[ci]
+            if cell_bbox is None:
+                continue
+            rows[ri][ci] = _rebuild_cell(page, cell_bbox, [tables[s] for s in sub_idxs])
+        overrides[pi] = rows
+    return suppressed, overrides
 
 
 def _page_items_ordered(
@@ -33,9 +140,12 @@ def _page_items_ordered(
     """
     segments: list[tuple[float, float, str]] = []  # (top_y, bottom_y, content)
 
-    # Tables
-    for table in tables:
-        rows = table.extract()
+    # Tables (resolving nested tables into [[NT:...]] markers first)
+    suppressed, overrides = resolve_nested(page, tables)
+    for ti, table in enumerate(tables):
+        if ti in suppressed:
+            continue
+        rows = overrides[ti] if ti in overrides else table.extract()
         if rows:
             md = table_to_md(rows)
             if md:
