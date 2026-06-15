@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import re
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 from .._common import ImageItem
@@ -181,6 +182,55 @@ def _page_items_ordered(
 
     segments.sort(key=lambda s: s[0])
     return [(s[0], s[2]) for s in segments]
+
+
+def _ocr_one(png: bytes, page_idx: int, data: bytes, llm) -> str:
+    """OCR a single pre-rendered scanned page: vision LLM, then pytesseract fallback."""
+    import sys
+    text = ""
+    if llm is not None:
+        try:
+            from ..llm import vision_to_text
+            text = vision_to_text(png, llm)
+            if text:
+                sys.stderr.write(f"  VLM OCR page {page_idx}: {len(text)} chars\n")
+        except Exception as exc:
+            sys.stderr.write(f"  VLM OCR failed (page {page_idx}): {exc}\n")
+    if not text:
+        text = ocr_page(data, page_idx)
+    return text or ""
+
+
+def _ocr_pages(scanned, data: bytes, llm, max_workers: int, ocr_fn=None) -> dict[int, str]:
+    """OCR pre-rendered scanned pages, concurrently when max_workers >= 2.
+
+    scanned: list[(page_idx, png_bytes)].
+    ocr_fn:  injectable (png, page_idx) -> str for tests; default calls _ocr_one.
+    Returns {page_idx: text}. Per-page failures are isolated to "".
+    """
+    if not scanned:
+        return {}
+    fn = ocr_fn or (lambda png, idx: _ocr_one(png, idx, data, llm))
+
+    if max_workers is None or max_workers <= 1 or len(scanned) == 1:
+        out: dict[int, str] = {}
+        for idx, png in scanned:
+            try:
+                out[idx] = fn(png, idx)
+            except Exception:
+                out[idx] = ""
+        return out
+
+    workers = min(max_workers, len(scanned))
+    results: dict[int, str] = {}
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        future_to_idx = {ex.submit(fn, png, idx): idx for idx, png in scanned}
+        for fut, idx in future_to_idx.items():
+            try:
+                results[idx] = fut.result()
+            except Exception:
+                results[idx] = ""
+    return results
 
 
 def parse(data: bytes, llm: "LlmConfig | None" = None) -> tuple[str, list[ImageItem]]:
