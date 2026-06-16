@@ -196,6 +196,71 @@ def test_convert_with_metadata_includes_quality_warnings(monkeypatch):
     ]
 
 
+def test_conversion_plan_routes_direct_documents():
+    from md_converter import DocumentProfile, conversion_plan
+
+    assert conversion_plan(DocumentProfile(kind="hwp")) == {
+        "queue": "direct",
+        "priority": "normal",
+        "estimated_ocr_pages": 0,
+        "reason": "hwp does not require OCR",
+    }
+    assert conversion_plan(
+        DocumentProfile(
+            kind="pdf",
+            page_count=3,
+            text_page_count=3,
+            scanned_page_count=0,
+            needs_ocr=False,
+        )
+    ) == {
+        "queue": "direct",
+        "priority": "normal",
+        "estimated_ocr_pages": 0,
+        "reason": "pdf does not require OCR",
+    }
+
+
+def test_conversion_plan_routes_ocr_documents_by_weight():
+    from md_converter import DocumentProfile, conversion_plan
+
+    assert conversion_plan(
+        DocumentProfile(kind="pdf", page_count=2, scanned_page_count=2, needs_ocr=True)
+    ) == {
+        "queue": "ocr",
+        "priority": "high",
+        "estimated_ocr_pages": 2,
+        "reason": "pdf has 2 scanned pages",
+    }
+    assert conversion_plan(
+        DocumentProfile(kind="pdf", page_count=9, scanned_page_count=9, needs_ocr=True)
+    ) == {
+        "queue": "ocr",
+        "priority": "normal",
+        "estimated_ocr_pages": 9,
+        "reason": "pdf has 9 scanned pages",
+    }
+    assert conversion_plan(
+        DocumentProfile(kind="pdf", page_count=19, scanned_page_count=19, needs_ocr=True)
+    ) == {
+        "queue": "heavy_ocr",
+        "priority": "low",
+        "estimated_ocr_pages": 19,
+        "reason": "pdf has 19 scanned pages",
+    }
+
+
+def test_conversion_plan_handles_unknown_profile_kind():
+    from md_converter import DocumentProfile, conversion_plan
+
+    assert conversion_plan(DocumentProfile(kind="doc")) == {
+        "queue": "unsupported",
+        "priority": "low",
+        "estimated_ocr_pages": 0,
+        "reason": "doc is not supported",
+    }
+
+
 def test_profile_pdf_counts_text_and_scanned_pages():
     import pytest
 

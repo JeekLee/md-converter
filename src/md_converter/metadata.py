@@ -140,6 +140,46 @@ def quality_warning_counts(warnings: list[dict[str, Any]]) -> dict[str, dict[str
     }
 
 
+def conversion_plan(profile: DocumentProfile) -> dict[str, str | int]:
+    kind = profile.kind.lower().lstrip(".")
+    if kind not in {"hwp", "hwpx", "pdf"}:
+        return {
+            "queue": "unsupported",
+            "priority": "low",
+            "estimated_ocr_pages": 0,
+            "reason": f"{kind} is not supported",
+        }
+
+    if kind != "pdf" or not profile.needs_ocr:
+        return {
+            "queue": "direct",
+            "priority": "normal",
+            "estimated_ocr_pages": 0,
+            "reason": f"{kind} does not require OCR",
+        }
+
+    ocr_pages = profile.scanned_page_count
+    if ocr_pages is None:
+        ocr_pages = profile.page_count or 0
+
+    if ocr_pages >= 10:
+        queue = "heavy_ocr"
+        priority = "low"
+    elif ocr_pages <= 2:
+        queue = "ocr"
+        priority = "high"
+    else:
+        queue = "ocr"
+        priority = "normal"
+
+    return {
+        "queue": queue,
+        "priority": priority,
+        "estimated_ocr_pages": ocr_pages,
+        "reason": f"pdf has {ocr_pages} scanned pages",
+    }
+
+
 def table_counts(md: str) -> tuple[int, int, int]:
     issues = 0
     tables = 0
