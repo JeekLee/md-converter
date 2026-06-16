@@ -34,6 +34,7 @@ def extract_page_images(
     page_idx: int,
     plumber_page: object,
     start_idx: int = 1,
+    reader: object | None = None,
 ) -> list[tuple[float, ImageItem]]:
     """Extract non-trivial content images from a PDF page.
 
@@ -51,7 +52,8 @@ def extract_page_images(
             "Install with: pip install 'md-converter[pdf]'"
         ) from exc
 
-    reader = PdfReader(io.BytesIO(pdf_data))
+    if reader is None:
+        reader = PdfReader(io.BytesIO(pdf_data))
     if page_idx >= len(reader.pages):
         return []
 
