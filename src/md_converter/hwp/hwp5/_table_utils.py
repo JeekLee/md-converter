@@ -20,6 +20,9 @@ def table_to_md(rows: list[list[str]]) -> str:
     if not rows:
         return ""
     col_count = max(len(r) for r in rows)
+    if col_count == 1 and len(rows) == 1:
+        return _escape_cell_for_table(rows[0][0] if rows[0] else "")
+
     lines: list[str] = []
     for i, row in enumerate(rows):
         padded = row + [""] * (col_count - len(row))
