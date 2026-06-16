@@ -14,16 +14,34 @@ def _load_benchmark_module():
     return module
 
 
+def _warning(
+    warning_type: str,
+    severity: str,
+    line: int,
+    excerpt: str,
+    reason: str,
+):
+    return {
+        "type": warning_type,
+        "severity": severity,
+        "line": line,
+        "excerpt": excerpt,
+        "reason": reason,
+    }
+
+
 def test_quality_warnings_flag_short_postal_code():
     benchmark = _load_benchmark_module()
     warnings = benchmark._quality_warnings("주소: 세종특별자치시\n우 3013")
 
     assert warnings == [
-        {
-            "type": "postal_code_width",
-            "line": 2,
-            "excerpt": "우 3013",
-        }
+        _warning(
+            "postal_code_width",
+            "medium",
+            2,
+            "우 3013",
+            "postal code is not 5, 6, or legacy 3-3 digits",
+        )
     ]
 
 
@@ -47,11 +65,13 @@ def test_quality_warnings_flag_incomplete_date():
     warnings = benchmark._quality_warnings("시행일: 2022. 4. 부터")
 
     assert warnings == [
-        {
-            "type": "date_incomplete",
-            "line": 1,
-            "excerpt": "시행일: 2022. 4. 부터",
-        }
+        _warning(
+            "date_incomplete",
+            "medium",
+            1,
+            "시행일: 2022. 4. 부터",
+            "date appears to be missing the day",
+        )
     ]
 
 
@@ -65,11 +85,13 @@ def test_quality_warnings_flag_suspicious_document_number():
     warnings = benchmark._quality_warnings("보험급여과-12O3")
 
     assert warnings == [
-        {
-            "type": "document_number_suspicious",
-            "line": 1,
-            "excerpt": "보험급여과-12O3",
-        }
+        _warning(
+            "document_number_suspicious",
+            "high",
+            1,
+            "보험급여과-12O3",
+            "Korean document number contains letters in the numeric part",
+        )
     ]
 
 
@@ -92,11 +114,13 @@ def test_quality_warnings_flag_suspicious_email():
     warnings = benchmark._quality_warnings("문의: shsong98@korea")
 
     assert warnings == [
-        {
-            "type": "email_suspicious",
-            "line": 1,
-            "excerpt": "문의: shsong98@korea",
-        }
+        _warning(
+            "email_suspicious",
+            "medium",
+            1,
+            "문의: shsong98@korea",
+            "email-like text has no dotted domain",
+        )
     ]
 
 
@@ -105,11 +129,24 @@ def test_quality_warnings_flag_known_admin_location_confusion():
     warnings = benchmark._quality_warnings("세종특별자치시 도움4로 13 (여진동)")
 
     assert warnings == [
-        {
-            "type": "admin_location_suspicious",
-            "line": 1,
-            "excerpt": "세종특별자치시 도움4로 13 (여진동)",
-        }
+        _warning(
+            "admin_location_suspicious",
+            "high",
+            1,
+            "세종특별자치시 도움4로 13 (여진동)",
+            "known OCR confusion in administrative location",
+        )
+    ]
+
+
+def test_quality_warnings_include_actionable_severity_and_reason():
+    benchmark = _load_benchmark_module()
+    warnings = benchmark._quality_warnings("우 3013\n보험급여과-12O3")
+
+    assert [w["severity"] for w in warnings] == ["medium", "high"]
+    assert [w["reason"] for w in warnings] == [
+        "postal code is not 5, 6, or legacy 3-3 digits",
+        "Korean document number contains letters in the numeric part",
     ]
 
 
@@ -119,3 +156,21 @@ def test_markdown_metrics_include_quality_warning_count():
 
     assert metrics["quality_warning_count"] == 1
     assert metrics["quality_warnings"][0]["type"] == "postal_code_width"
+
+
+def test_warning_counts_can_group_by_severity():
+    benchmark = _load_benchmark_module()
+    results = [
+        {
+            "quality_warnings": [
+                {"type": "postal_code_width", "severity": "medium"},
+                {"type": "admin_location_suspicious", "severity": "high"},
+            ]
+        },
+        {"quality_warnings": [{"type": "replacement_glyph", "severity": "high"}]},
+    ]
+
+    assert benchmark._warning_counts(results, "severity") == {
+        "medium": 1,
+        "high": 2,
+    }

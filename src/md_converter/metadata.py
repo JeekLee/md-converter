@@ -179,13 +179,33 @@ def quality_warnings(md: str) -> list[dict[str, Any]]:
     suspicious_doc_no = re.compile(r"[가-힣][가-힣A-Za-z]*-\d*[A-Za-z]\d*")
     email_like = re.compile(r"\b[\w.+-]+@[\w-]+(?:\.[\w-]+)*\b")
     suspicious_admin_locations = ("(여진동)",)
+    warning_details = {
+        "postal_code_width": (
+            "medium",
+            "postal code is not 5, 6, or legacy 3-3 digits",
+        ),
+        "date_incomplete": ("medium", "date appears to be missing the day"),
+        "document_number_suspicious": (
+            "high",
+            "Korean document number contains letters in the numeric part",
+        ),
+        "email_suspicious": ("medium", "email-like text has no dotted domain"),
+        "admin_location_suspicious": (
+            "high",
+            "known OCR confusion in administrative location",
+        ),
+        "replacement_glyph": ("high", "replacement or placeholder glyph remains"),
+    }
 
     def add_warning(warning_type: str, line_no: int, excerpt: str) -> None:
+        severity, reason = warning_details[warning_type]
         warnings.append(
             {
                 "type": warning_type,
+                "severity": severity,
                 "line": line_no,
                 "excerpt": excerpt,
+                "reason": reason,
             }
         )
 
