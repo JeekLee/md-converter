@@ -26,6 +26,7 @@ from .metadata import (
     ConversionResult,
     ConverterMetadata,
     DocumentProfile,
+    ErrorInfo,
     MarkdownMetrics,
     SourceMetadata,
     markdown_metrics,
@@ -142,6 +143,7 @@ class MdConverter:
                 source=source_meta,
                 converter=converter_meta,
                 error=str(exc),
+                error_info=self._error_info(exc, ext),
             )
 
     def profile(
@@ -186,6 +188,29 @@ class MdConverter:
         md = extract_nested_tables(md)
 
         return md
+
+    def _error_info(self, exc: Exception, ext: str) -> ErrorInfo:
+        message = str(exc)
+        if isinstance(exc, ValueError) and "Unsupported format" in message:
+            return ErrorInfo(
+                type="unsupported_format",
+                message=message,
+                stage="convert",
+                retryable=False,
+            )
+        if ext.lower() in {".hwp", ".hwpx", ".pdf"}:
+            return ErrorInfo(
+                type="parse_failed",
+                message=message,
+                stage="convert",
+                retryable=False,
+            )
+        return ErrorInfo(
+            type="unknown",
+            message=message,
+            stage="convert",
+            retryable=True,
+        )
 
     # ── drawing handling ──────────────────────────────────────────────────────
 
@@ -294,6 +319,7 @@ __all__ = [
     "ConversionResult",
     "ConverterMetadata",
     "DocumentProfile",
+    "ErrorInfo",
     "MarkdownMetrics",
     "SourceMetadata",
 ]

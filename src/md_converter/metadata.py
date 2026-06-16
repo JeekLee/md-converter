@@ -77,6 +77,22 @@ class ConverterMetadata:
 
 
 @dataclass(frozen=True)
+class ErrorInfo:
+    type: str
+    message: str
+    stage: str
+    retryable: bool
+
+    def to_dict(self) -> dict[str, str | bool]:
+        return {
+            "type": self.type,
+            "message": self.message,
+            "stage": self.stage,
+            "retryable": self.retryable,
+        }
+
+
+@dataclass(frozen=True)
 class ConversionResult:
     markdown: str
     suffix: str
@@ -90,6 +106,7 @@ class ConversionResult:
     source: SourceMetadata
     converter: ConverterMetadata
     error: str | None = None
+    error_info: ErrorInfo | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -105,6 +122,7 @@ class ConversionResult:
             "source": self.source.to_dict(),
             "converter": self.converter.to_dict(),
             "error": self.error,
+            "error_info": self.error_info.to_dict() if self.error_info else None,
         }
 
 
