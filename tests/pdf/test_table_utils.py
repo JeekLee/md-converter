@@ -145,6 +145,20 @@ def test_non_table_text_passthrough():
     assert "가나다" in result
 
 
+def test_empty_pdf_table_artifact_dropped():
+    md = "앞 문단\n\n|  |  |\n| --- | --- |\n\n뒤 문단"
+    result = merge_overflow_tables(md)
+    assert "|  |  |" not in result
+    assert "앞 문단" in result
+    assert "뒤 문단" in result
+
+
+def test_sparse_content_table_preserved():
+    md = "|  | 내용 |\n| --- | --- |\n|  |  |"
+    result = merge_overflow_tables(md)
+    assert "|  | 내용 |" in result
+
+
 # ── nested-containment helpers ────────────────────────────────────────────────
 
 from md_converter.pdf._table_utils import (
