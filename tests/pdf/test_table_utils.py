@@ -65,6 +65,16 @@ def test_table_to_md_ragged_rows():
     assert lines[2].count("|") == 4
 
 
+def test_single_cell_pdf_table_renders_as_paragraph():
+    assert table_to_md([["붙임. 질의응답"]]) == "붙임. 질의응답"
+
+
+def test_one_column_multirow_pdf_table_stays_table():
+    md = table_to_md([["질의"], ["답변"]])
+    assert md.splitlines()[0] == "| 질의 |"
+    assert "| 답변 |" in md
+
+
 # ── _col_count / _header_cells ────────────────────────────────────────────────
 
 def test_col_count():

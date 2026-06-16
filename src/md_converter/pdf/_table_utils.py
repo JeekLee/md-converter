@@ -105,6 +105,9 @@ def table_to_md(rows: list[list[str | None]]) -> str:
             cells.append("")
         norm.append(cells)
 
+    if col_count == 1 and len(norm) == 1:
+        return norm[0][0]
+
     header = "| " + " | ".join(norm[0]) + " |"
     sep = "| " + " | ".join("---" for _ in range(col_count)) + " |"
     body = ["| " + " | ".join(r) + " |" for r in norm[1:]]

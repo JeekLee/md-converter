@@ -77,6 +77,19 @@ def test_table_pipe_escaped_in_cell():
     assert "A\\|B" in md
 
 
+def test_single_cell_hwpx_table_renders_as_paragraph():
+    xml = _sec(_tbl(["붙임. 질의응답"]))
+    md = convert(_make_hwpx(xml))
+    assert md.strip() == "붙임. 질의응답"
+
+
+def test_one_column_multirow_hwpx_table_stays_table():
+    xml = _sec(_tbl(["질의"], ["답변"]))
+    md = convert(_make_hwpx(xml))
+    assert "| 질의 |" in md
+    assert "| 답변 |" in md
+
+
 def test_control_chars_filtered():
     # XML 1.0 prohibits raw U+0000-U+001F (except \t \n \r) in text content.
     # HWP5 PARA_TEXT has inline object placeholders in this range; HWPX uses

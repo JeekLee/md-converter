@@ -219,6 +219,16 @@ def test_table_to_md_escapes_normal_cell_pipes():
     assert "a\\|b" in md
 
 
+def test_single_cell_hwp5_table_renders_as_paragraph():
+    assert table_to_md([["붙임. 질의응답"]]) == "붙임. 질의응답"
+
+
+def test_one_column_multirow_hwp5_table_stays_table():
+    md = table_to_md([["질의"], ["답변"]])
+    assert md.splitlines()[0] == "| 질의 |"
+    assert "| 답변 |" in md
+
+
 # ── _parse_section: nested table ──────────────────────────────────────────────
 
 def _u16(s: str) -> bytes:
