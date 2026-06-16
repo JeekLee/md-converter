@@ -9,13 +9,14 @@ from __future__ import annotations
 import argparse
 import difflib
 import json
+import os
 import re
 import statistics
 import time
 from pathlib import Path
 from typing import Any
 
-from md_converter import MdConverter
+from md_converter import LlmConfig, MdConverter
 
 
 DATASET: list[tuple[str, str, str]] = [
@@ -72,6 +73,22 @@ def _make_s3_client(endpoint: str, access_key: str, secret_key: str) -> Any:
         aws_secret_access_key=secret_key,
         config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
     )
+
+
+def _load_env_file(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    if not path.exists():
+        raise SystemExit(f"env file does not exist: {path}")
+    for raw_line in path.read_text(errors="ignore").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key:
+            values[key] = value
+    return values
 
 
 def _ensure_cached(
@@ -140,7 +157,10 @@ def _normalize_for_similarity(md: str) -> str:
 
 def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
     s3 = _make_s3_client(args.endpoint, args.access_key, args.secret_key)
-    converter = MdConverter(ocr_workers=args.ocr_workers)
+    llm = None
+    if args.llm_url and args.llm_api_key and args.llm_model:
+        llm = LlmConfig(url=args.llm_url, api_key=args.llm_api_key, model=args.llm_model)
+    converter = MdConverter(llm=llm, ocr_workers=args.ocr_workers)
     output_dir = args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -187,6 +207,9 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
 
     return {
         "dataset_size": len(DATASET),
+        "llm_enabled": llm is not None,
+        "llm_url": args.llm_url if llm is not None else None,
+        "llm_model": args.llm_model if llm is not None else None,
         "pairs": pairs,
         "total_time_s_median_sum": sum(r["time_s_median"] for r in results),
         "by_kind_time_s_median_sum": {
@@ -223,7 +246,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--runs", type=int, default=7)
     parser.add_argument("--ocr-workers", type=int, default=1)
     parser.add_argument("--similarity-chars", type=int, default=20_000)
-    return parser.parse_args()
+    parser.add_argument("--env-file", type=Path)
+    parser.add_argument("--llm-url", default=os.environ.get("LLM_BASE_URL"))
+    parser.add_argument("--llm-api-key", default=os.environ.get("LLM_API_KEY"))
+    parser.add_argument(
+        "--llm-model",
+        default=os.environ.get("VLM_MODEL") or os.environ.get("LLM_MODEL"),
+    )
+    args = parser.parse_args()
+    if args.env_file is not None:
+        env_values = _load_env_file(args.env_file)
+        args.llm_url = args.llm_url or env_values.get("LLM_BASE_URL")
+        args.llm_api_key = args.llm_api_key or env_values.get("LLM_API_KEY")
+        args.llm_model = (
+            args.llm_model
+            or env_values.get("VLM_MODEL")
+            or env_values.get("LLM_MODEL")
+        )
+    return args
 
 
 def main() -> None:
