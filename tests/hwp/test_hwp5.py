@@ -194,7 +194,7 @@ from md_converter.hwp.hwp5._table_utils import (
 
 
 def test_serialize_nt_basic():
-    assert _serialize_nt([["a", "b"], ["c", "d"]]) == "[[NT:a|b;c|d]]"
+    assert _serialize_nt([["a", "b"], ["c", "d"]]).startswith("[[NT64:")
 
 
 def test_serialize_nt_empty_returns_blank():
@@ -208,8 +208,9 @@ def test_serialize_flat_joins_cells():
 def test_table_to_md_keeps_nt_marker_pipes_intact():
     # A cell holding an [[NT:]] marker must NOT have its internal pipes escaped,
     # otherwise extract_nested_tables can't parse it.
-    md = table_to_md([["[[NT:a|b;c|d]]"]])
-    assert "[[NT:a|b;c|d]]" in md
+    marker = _serialize_nt([["a", "b"], ["c", "d"]])
+    md = table_to_md([[marker]])
+    assert marker in md
     assert "\\|" not in md
 
 
@@ -230,7 +231,7 @@ def _table_ctrl(level: int) -> bytes:
 
 
 def test_nested_table_serialized_into_parent_cell():
-    """A table inside a cell becomes an [[NT:]] marker; outer rows are NOT lost."""
+    """A table inside a cell becomes a nested-table marker; outer rows are NOT lost."""
     rec = b""
     rec += _table_ctrl(0)                                   # outer table @0
     rec += _make_record(0x4D, 1, b"\x00" * 4 + _struct.pack("<2H", 2, 2))  # TABLE_BODY
@@ -251,8 +252,7 @@ def test_nested_table_serialized_into_parent_cell():
 
     assert len(parts) == 1, f"expected 1 outer table, got {len(parts)}: {parts}"
     table = parts[0]
-    # nested table serialized as [[NT:]] with pipes intact (not escaped)
-    assert "[[NT:항목|금액;외래|1000]]" in table
+    assert "[[NT64:" in table
     # outer content preserved — bug fix: outer rows not overwritten
     assert "구분" in table and "세부" in table and "본인부담" in table
     data_rows = [l for l in table.splitlines() if l.startswith("|") and "---" not in l]
@@ -276,10 +276,11 @@ def test_nested_table_end_to_end_separation():
     assert "→ 표 1" in md
     assert "**[표 1]**" in md
     assert "[[NT:" not in md
+    assert "[[NT64:" not in md
 
 
 def test_deeply_nested_table_flattened():
-    """A table nested 2 levels deep is flattened to text (only depth-1 → [[NT:]])."""
+    """A table nested 2 levels deep is flattened to text (only depth-1 gets a marker)."""
     rec = b""
     rec += _table_ctrl(0)                                            # outer @0
     rec += _make_record(0x48, 1, _list_header_payload(0, 0)) + _make_record(0x43, 2, _u16("L0"))
@@ -292,5 +293,7 @@ def test_deeply_nested_table_flattened():
     parts = _parse_section(rec, {}, {}, [])
     table = parts[0]
     # only ONE marker — the depth-2 table was flattened into the depth-1 marker
-    assert table.count("[[NT:") == 1
-    assert "[[NT:L1 L2]]" in table
+    assert table.count("[[NT64:") == 1
+    from md_converter.nested_tables import extract_nested_tables
+    out = extract_nested_tables(table)
+    assert "L1 L2" in out

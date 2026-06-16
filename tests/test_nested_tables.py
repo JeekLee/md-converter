@@ -1,7 +1,7 @@
 """Unit tests for extract_nested_tables (nested-table separation)."""
 from __future__ import annotations
 
-from md_converter.nested_tables import extract_nested_tables
+from md_converter.nested_tables import extract_nested_tables, serialize_nested_table
 
 
 def test_single_nested_table_separated():
@@ -94,3 +94,17 @@ def test_empty_nested_table_pipe_shape_dropped():
     out = extract_nested_tables(md)
     assert "[[NT:" not in out
     assert "표 1" not in out
+
+
+def test_safe_marker_preserves_delimiter_text():
+    marker = serialize_nested_table([["A|B", "C;D"], ["literal ]] marker", "값"]])
+    md = f"| parent |\n| --- |\n| {marker} |"
+    out = extract_nested_tables(md)
+    assert "→ 표 1" in out
+    assert "A\\|B" in out
+    assert "C;D" in out
+    assert "literal ]] marker" in out
+
+
+def test_safe_marker_empty_rows_dropped():
+    assert serialize_nested_table([["", None]]) == ""

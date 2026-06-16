@@ -169,7 +169,7 @@ def test_cell_text_unchanged_regression():
 
 
 def test_serialize_nt_basic():
-    assert serialize_nt([["항목", "금액"], ["외래", "1000"]]) == "[[NT:항목|금액;외래|1000]]"
+    assert serialize_nt([["항목", "금액"], ["외래", "1000"]]).startswith("[[NT64:")
 
 
 def test_serialize_nt_empty():
@@ -178,7 +178,9 @@ def test_serialize_nt_empty():
 
 def test_serialize_nt_cleans_cells():
     # CJK char-spacing collapsed inside the marker, no escaping
-    assert serialize_nt([["보 험", "인 정"]]) == "[[NT:보험|인정]]"
+    marker = serialize_nt([["보 험", "인 정"]])
+    assert " " not in marker
+    assert marker.startswith("[[NT64:")
 
 
 def test_bbox_in_cell():
@@ -190,8 +192,9 @@ def test_bbox_in_cell():
 
 
 def test_table_to_md_keeps_nt_marker():
-    md = table_to_md([["a", "pre [[NT:x|y;z|w]] post"]])
-    assert "pre [[NT:x|y;z|w]] post" in md      # marker cell passed through, pipes intact
+    marker = serialize_nt([["x", "y"], ["z", "w"]])
+    md = table_to_md([["a", f"pre {marker} post"]])
+    assert f"pre {marker} post" in md      # marker cell passed through intact
 
 
 def test_table_to_md_escapes_normal_cell():
