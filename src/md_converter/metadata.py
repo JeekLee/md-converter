@@ -49,6 +49,34 @@ class MarkdownMetrics:
 
 
 @dataclass(frozen=True)
+class SourceMetadata:
+    id: str | None = None
+    url: str | None = None
+    name: str | None = None
+
+    def to_dict(self) -> dict[str, str | None]:
+        return {
+            "id": self.id,
+            "url": self.url,
+            "name": self.name,
+        }
+
+
+@dataclass(frozen=True)
+class ConverterMetadata:
+    ocr_workers: int
+    llm_enabled: bool
+    llm_model: str | None = None
+
+    def to_dict(self) -> dict[str, int | bool | str | None]:
+        return {
+            "ocr_workers": self.ocr_workers,
+            "llm_enabled": self.llm_enabled,
+            "llm_model": self.llm_model,
+        }
+
+
+@dataclass(frozen=True)
 class ConversionResult:
     markdown: str
     suffix: str
@@ -59,6 +87,8 @@ class ConversionResult:
     quality_warnings: list[dict[str, Any]]
     profile: DocumentProfile
     llm_used: bool
+    source: SourceMetadata
+    converter: ConverterMetadata
     error: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -72,6 +102,8 @@ class ConversionResult:
             "quality_warnings": list(self.quality_warnings),
             "profile": self.profile.to_dict(),
             "llm_used": self.llm_used,
+            "source": self.source.to_dict(),
+            "converter": self.converter.to_dict(),
             "error": self.error,
         }
 

@@ -73,7 +73,14 @@ profile = converter.profile(raw_bytes, suffix=".pdf")
 if profile.needs_ocr:
     queue = "ocr"
 
-result = converter.convert_with_metadata(raw_bytes, suffix=".pdf", raise_errors=False)
+result = converter.convert_with_metadata(
+    raw_bytes,
+    suffix=".pdf",
+    raise_errors=False,
+    source_id="post-123/attachment-2",
+    source_url="https://example.go.kr/notice/123",
+    source_name="첨부파일.pdf",
+)
 if result.error is None:
     save_markdown(result.markdown, metadata=result.to_dict())
 ```

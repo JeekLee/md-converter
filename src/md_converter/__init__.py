@@ -24,8 +24,10 @@ from .hwp import parse_hwp5 as _hwp5_parse, parse_hwpx as _hwpx_parse
 from .llm import LlmConfig, drawing_to_mermaid, vision_to_mermaid
 from .metadata import (
     ConversionResult,
+    ConverterMetadata,
     DocumentProfile,
     MarkdownMetrics,
+    SourceMetadata,
     markdown_metrics,
     profile_for_suffix,
     quality_warnings,
@@ -94,10 +96,19 @@ class MdConverter:
         suffix: str | None = None,
         *,
         raise_errors: bool = True,
+        source_id: str | None = None,
+        source_url: str | None = None,
+        source_name: str | None = None,
     ) -> ConversionResult:
         data = b""
         ext = suffix or ""
         started = time.perf_counter()
+        source_meta = SourceMetadata(id=source_id, url=source_url, name=source_name)
+        converter_meta = ConverterMetadata(
+            ocr_workers=self._ocr_workers,
+            llm_enabled=self._llm is not None,
+            llm_model=self._llm.model if self._llm is not None else None,
+        )
         try:
             data, ext = self._read_source(source, suffix)
             profile = self.profile(data, ext)
@@ -112,6 +123,8 @@ class MdConverter:
                 quality_warnings=quality_warnings(md),
                 profile=profile,
                 llm_used=self._llm is not None and profile.needs_ocr,
+                source=source_meta,
+                converter=converter_meta,
             )
         except Exception as exc:
             if raise_errors:
@@ -126,6 +139,8 @@ class MdConverter:
                 quality_warnings=[],
                 profile=profile_for_suffix(ext),
                 llm_used=False,
+                source=source_meta,
+                converter=converter_meta,
                 error=str(exc),
             )
 
@@ -277,6 +292,8 @@ __all__ = [
     "LlmConfig",
     "ImageItem",
     "ConversionResult",
+    "ConverterMetadata",
     "DocumentProfile",
     "MarkdownMetrics",
+    "SourceMetadata",
 ]
