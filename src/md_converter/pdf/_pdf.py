@@ -271,6 +271,7 @@ def parse(data: bytes, llm: "LlmConfig | None" = None, max_ocr_workers: int = 4)
         n_pages = len(pdf.pages)
         page_parts: list[list[str]] = [[] for _ in range(n_pages)]
         scanned: list[tuple[int, bytes]] = []
+        pdf_reader = None
 
         for page_idx, page in enumerate(pdf.pages):
 
@@ -285,9 +286,21 @@ def parse(data: bytes, llm: "LlmConfig | None" = None, max_ocr_workers: int = 4)
                 continue
 
             # ── Normal page: extract embedded images ──────────────────────────
-            try:
-                img_items = extract_page_images(data, page_idx, page, start_idx=img_counter)
-            except ImportError:
+            if page.images:
+                try:
+                    if pdf_reader is None:
+                        from pypdf import PdfReader
+                        pdf_reader = PdfReader(io.BytesIO(data))
+                    img_items = extract_page_images(
+                        data,
+                        page_idx,
+                        page,
+                        start_idx=img_counter,
+                        reader=pdf_reader,
+                    )
+                except ImportError:
+                    img_items = []
+            else:
                 img_items = []
 
             img_tokens: list[tuple[float, str]] = []
