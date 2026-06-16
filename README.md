@@ -183,5 +183,5 @@ To include scanned-PDF OCR and diagram VLM calls, provide `LLM_BASE_URL`,
 `LLM_API_KEY`, and `VLM_MODEL` via an env file or flags:
 
 ```bash
-uv run python scripts/benchmark_clic_minio.py --env-file /path/to/.env --runs 1
+uv run python scripts/benchmark_clic_minio.py --env-file /path/to/.env --runs 1 --ocr-workers 2
 ```
