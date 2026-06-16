@@ -4,7 +4,7 @@
 
     converter = MdConverter(
         images=LocalImages("images"),   # or S3Config(...), or None
-        llm=LlmConfig(...),             # required — drawing/diagram → Mermaid, scanned-PDF OCR
+        llm=LlmConfig(...),             # optional — drawing/diagram → Mermaid, scanned-PDF OCR
     )
     md = converter.convert("document.hwp")
     md = converter.convert("document.hwpx")
@@ -19,7 +19,7 @@ from pathlib import Path
 
 from ._common import ImageItem
 from .hwp import parse_hwp5 as _hwp5_parse, parse_hwpx as _hwpx_parse
-from .llm import LlmConfig, drawing_to_mermaid, vision_to_mermaid, vision_to_text
+from .llm import LlmConfig, drawing_to_mermaid, vision_to_mermaid
 from .nested_tables import extract_nested_tables
 from .pdf import parse as _pdf_parse
 from .s3 import S3Config, put_object
@@ -40,8 +40,8 @@ class MdConverter:
     """HWP / HWPX → Markdown converter.
 
     Args:
-        llm:    LlmConfig (required) — drawing/diagram → Mermaid conversion
-                and scanned-PDF OCR (vision). Nested tables no longer use the LLM.
+        llm:    Optional LlmConfig — drawing/diagram → Mermaid conversion
+                and scanned-PDF OCR (vision). Nested tables do not use the LLM.
         images: Where to put extracted images.
                 S3Config    — upload to S3/MinIO, embed as s3:// URL.
                 LocalImages — write to a local directory, embed as a file path.
@@ -52,7 +52,7 @@ class MdConverter:
     def __init__(
         self,
         *,
-        llm: LlmConfig,
+        llm: LlmConfig | None = None,
         images: S3Config | LocalImages | None = None,
         ocr_workers: int = 4,
     ) -> None:
@@ -116,7 +116,7 @@ class MdConverter:
         def _replace(m: re.Match) -> str:
             drawing_text = m.group(1).strip()
             labels = [l for l in drawing_text.splitlines() if l.strip()]
-            if len(labels) <= 1:
+            if len(labels) <= 1 or self._llm is None:
                 # Single label = decorative text box / section banner → plain text
                 return drawing_text
             # Multiple labels = possible diagram → try Mermaid
@@ -133,6 +133,8 @@ class MdConverter:
 
         Leaves token in place on failure so _process_images() handles it as a regular image.
         """
+        if self._llm is None:
+            return md
         for img in image_items:
             if not img.is_diagram:
                 continue

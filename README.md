@@ -38,7 +38,7 @@ Extras: `hwp5` (olefile), `images` (Pillow, for BMP→PNG), `pdf` (pdfplumber + 
 
 ## Usage
 
-`llm` is a required argument — `MdConverter` raises `TypeError` if omitted. It is only *invoked* for diagram/drawing → Mermaid conversion and for scanned-PDF OCR; plain tables and nested tables need no LLM.
+`llm` is optional. It is only *invoked* for diagram/drawing → Mermaid conversion and for scanned-PDF OCR; plain text, plain tables, images, and nested tables need no LLM.
 
 ```python
 from md_converter import MdConverter, S3Config, LocalImages, LlmConfig
@@ -113,7 +113,7 @@ Signing uses AWS Signature Version 4 via stdlib `hmac` + `hashlib` — no boto3 
 ### Drop images (default)
 
 ```python
-converter = MdConverter(llm=llm_cfg)  # images=None
+converter = MdConverter()  # images=None, llm=None
 ```
 
 Image placeholders are removed from the output.

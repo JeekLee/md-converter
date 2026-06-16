@@ -180,7 +180,7 @@ def test_real_hira_hwpx(tmp_path):
 
 
 def test_nested_table_separated_via_converter():
-    from md_converter import MdConverter, LlmConfig
+    from md_converter import MdConverter
 
     def _tc(text: str) -> str:
         return (
@@ -206,8 +206,7 @@ def test_nested_table_separated_via_converter():
     )
     xml = _sec(outer)
 
-    # LLM은 중첩 표 처리에 더 이상 쓰이지 않으므로 더미 설정(미사용)으로 충분.
-    converter = MdConverter(llm=LlmConfig(url="http://unused.invalid", api_key="x", model="x"))
+    converter = MdConverter()
     md = converter.convert(_make_hwpx(xml), suffix=".hwpx")
 
     assert "[[NT:" not in md
@@ -218,7 +217,7 @@ def test_nested_table_separated_via_converter():
 
 
 def test_depth2_nested_table_flattened_via_converter():
-    from md_converter import MdConverter, LlmConfig
+    from md_converter import MdConverter
 
     def _tc(text: str) -> str:
         return f"<hp:tc><hp:subList><hp:p><hp:run><hp:t>{text}</hp:t></hp:run></hp:p></hp:subList></hp:tc>"
@@ -234,9 +233,7 @@ def test_depth2_nested_table_flattened_via_converter():
         "</hp:tbl></hp:run></hp:p>"
     )
     xml = _sec(outer)
-    md = MdConverter(llm=LlmConfig(url="http://unused.invalid", api_key="x", model="x")).convert(
-        _make_hwpx(xml), suffix=".hwpx"
-    )
+    md = MdConverter().convert(_make_hwpx(xml), suffix=".hwpx")
     # depth-2 leaf content must be flattened into the separated table, not dropped
     assert "L2leaf" in md
     assert "→ 표 1" in md
