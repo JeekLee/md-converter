@@ -60,6 +60,30 @@ md = converter.convert(raw_bytes, suffix=".pdf")  # bytes need an explicit suffi
 
 `convert()` returns a single Markdown `str`. Supported suffixes: `.hwp`, `.hwpx`, `.pdf`.
 
+For crawlers, use `profile()` before scheduling work or `convert_with_metadata()`
+when storing conversion results:
+
+```python
+converter = MdConverter(
+    llm=LlmConfig(url="http://localhost:10080/v1", api_key="sk-...", model="vision-model"),
+    ocr_workers=2,
+)
+
+profile = converter.profile(raw_bytes, suffix=".pdf")
+if profile.needs_ocr:
+    queue = "ocr"
+
+result = converter.convert_with_metadata(raw_bytes, suffix=".pdf", raise_errors=False)
+if result.error is None:
+    save_markdown(
+        result.markdown,
+        sha256=result.sha256,
+        metrics=result.metrics,
+        quality_warnings=result.quality_warnings,
+        profile=result.profile,
+    )
+```
+
 ## Nested tables
 
 When a table cell contains another table, the inner table is **extracted as a standalone GFM table** placed right after the parent table block, and the parent cell keeps a `→ 표 N` reference. This is pure string/structure processing — **no LLM call** — and produces the same output whether the source is HWP, HWPX, or PDF.

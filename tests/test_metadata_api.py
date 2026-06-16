@@ -1,0 +1,83 @@
+from __future__ import annotations
+
+import hashlib
+
+
+def test_convert_with_metadata_returns_crawler_friendly_result(monkeypatch):
+    import md_converter as mc
+    from md_converter import MdConverter
+
+    def fake_hwp_parse(data: bytes):
+        return "본문\n\n| A | B |\n| --- | --- |\n| 1 | 2 |", []
+
+    monkeypatch.setattr(mc, "_hwp5_parse", fake_hwp_parse)
+
+    data = b"fake hwp"
+    result = MdConverter().convert_with_metadata(data, suffix=".hwp")
+
+    assert result.markdown.startswith("본문")
+    assert result.suffix == ".hwp"
+    assert result.bytes == len(data)
+    assert result.sha256 == hashlib.sha256(data).hexdigest()
+    assert result.runtime_s >= 0
+    assert result.error is None
+    assert result.llm_used is False
+    assert result.metrics.chars == len(result.markdown)
+    assert result.metrics.tables == 1
+    assert result.metrics.table_issues == 0
+    assert result.quality_warnings == []
+    assert result.profile.kind == "hwp"
+    assert result.profile.page_count is None
+
+
+def test_convert_with_metadata_can_capture_errors():
+    from md_converter import MdConverter
+
+    result = MdConverter().convert_with_metadata(b"bad", suffix=".doc", raise_errors=False)
+
+    assert result.markdown == ""
+    assert result.suffix == ".doc"
+    assert result.error is not None
+    assert "Unsupported format" in result.error
+    assert result.metrics.chars == 0
+    assert result.quality_warnings == []
+
+
+def test_convert_with_metadata_includes_quality_warnings(monkeypatch):
+    import md_converter as mc
+    from md_converter import MdConverter
+
+    def fake_hwp_parse(data: bytes):
+        return "우 3013 세종특별자치시 도움4로 13 (여진동)", []
+
+    monkeypatch.setattr(mc, "_hwp5_parse", fake_hwp_parse)
+
+    result = MdConverter().convert_with_metadata(b"fake hwp", suffix=".hwp")
+
+    assert [w["type"] for w in result.quality_warnings] == [
+        "postal_code_width",
+        "admin_location_suspicious",
+    ]
+
+
+def test_profile_pdf_counts_text_and_scanned_pages():
+    import pytest
+
+    fitz = pytest.importorskip("fitz")
+    from md_converter.pdf import profile_pdf
+
+    doc = fitz.open()
+    text_page = doc.new_page(width=300, height=400)
+    text_page.insert_text((40, 60), "ALPHA " * 12, fontsize=12)
+    scanned_page = doc.new_page(width=300, height=400)
+    pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 300, 400))
+    pix.clear_with(240)
+    scanned_page.insert_image(fitz.Rect(0, 0, 300, 400), pixmap=pix)
+
+    profile = profile_pdf(doc.tobytes())
+
+    assert profile.kind == "pdf"
+    assert profile.page_count == 2
+    assert profile.text_page_count == 1
+    assert profile.scanned_page_count == 1
+    assert profile.needs_ocr is True

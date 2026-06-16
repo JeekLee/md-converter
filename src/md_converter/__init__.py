@@ -13,15 +13,26 @@
 from __future__ import annotations
 
 import re
+import hashlib
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
 from ._common import ImageItem
 from .hwp import parse_hwp5 as _hwp5_parse, parse_hwpx as _hwpx_parse
 from .llm import LlmConfig, drawing_to_mermaid, vision_to_mermaid
+from .metadata import (
+    ConversionResult,
+    DocumentProfile,
+    MarkdownMetrics,
+    markdown_metrics,
+    profile_for_suffix,
+    quality_warnings,
+)
 from .nested_tables import extract_nested_tables
 from .pdf import parse as _pdf_parse
+from .pdf import profile_pdf
 from .s3 import S3Config, put_object
 
 
@@ -74,16 +85,76 @@ class MdConverter:
         Returns:
             Markdown string.
         """
+        data, ext = self._read_source(source, suffix)
+        return self._convert_data(data, ext)
+
+    def convert_with_metadata(
+        self,
+        source: str | Path | bytes,
+        suffix: str | None = None,
+        *,
+        raise_errors: bool = True,
+    ) -> ConversionResult:
+        data = b""
+        ext = suffix or ""
+        started = time.perf_counter()
+        try:
+            data, ext = self._read_source(source, suffix)
+            profile = self.profile(data, ext)
+            md = self._convert_data(data, ext)
+            return ConversionResult(
+                markdown=md,
+                suffix=ext.lower(),
+                bytes=len(data),
+                sha256=hashlib.sha256(data).hexdigest(),
+                runtime_s=time.perf_counter() - started,
+                metrics=markdown_metrics(md),
+                quality_warnings=quality_warnings(md),
+                profile=profile,
+                llm_used=self._llm is not None and profile.needs_ocr,
+            )
+        except Exception as exc:
+            if raise_errors:
+                raise
+            return ConversionResult(
+                markdown="",
+                suffix=ext.lower(),
+                bytes=len(data),
+                sha256=hashlib.sha256(data).hexdigest(),
+                runtime_s=time.perf_counter() - started,
+                metrics=markdown_metrics(""),
+                quality_warnings=[],
+                profile=profile_for_suffix(ext),
+                llm_used=False,
+                error=str(exc),
+            )
+
+    def profile(
+        self,
+        source: str | Path | bytes,
+        suffix: str | None = None,
+    ) -> DocumentProfile:
+        data, ext = self._read_source(source, suffix)
+        s = ext.lower()
+        if s == ".pdf":
+            return profile_pdf(data)
+        if s in {".hwp", ".hwpx"}:
+            return profile_for_suffix(s)
+        raise ValueError(f"Unsupported format: {ext!r} (expected '.hwp', '.hwpx', or '.pdf')")
+
+    def _read_source(
+        self,
+        source: str | Path | bytes,
+        suffix: str | None = None,
+    ) -> tuple[bytes, str]:
         if isinstance(source, (str, Path)):
             path = Path(source)
-            data = path.read_bytes()
-            ext = path.suffix
-        else:
-            if suffix is None:
-                raise ValueError("suffix is required when source is bytes")
-            data = bytes(source)
-            ext = suffix
+            return path.read_bytes(), path.suffix
+        if suffix is None:
+            raise ValueError("suffix is required when source is bytes")
+        return bytes(source), suffix
 
+    def _convert_data(self, data: bytes, ext: str) -> str:
         s = ext.lower()
         if s == ".hwpx":
             md, image_items = _hwpx_parse(data)
@@ -205,4 +276,7 @@ __all__ = [
     "S3Config",
     "LlmConfig",
     "ImageItem",
+    "ConversionResult",
+    "DocumentProfile",
+    "MarkdownMetrics",
 ]
