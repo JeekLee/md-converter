@@ -7,6 +7,7 @@ Markdown quality counters so conversion changes can be compared consistently.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import difflib
 import json
 import os
@@ -135,8 +136,34 @@ def _table_counts(md: str) -> tuple[int, int, int]:
     return tables, rows, issues
 
 
-def _markdown_metrics(md: str) -> dict[str, int]:
+def _quality_warnings(md: str) -> list[dict[str, Any]]:
+    warnings: list[dict[str, Any]] = []
+    postal_code = re.compile(r"\b우\s+(\d+)\b")
+    for line_no, line in enumerate(md.splitlines(), start=1):
+        excerpt = line.strip()
+        for match in postal_code.finditer(line):
+            if len(match.group(1)) < 5:
+                warnings.append(
+                    {
+                        "type": "postal_code_width",
+                        "line": line_no,
+                        "excerpt": excerpt,
+                    }
+                )
+        if "�" in line or "□" in line:
+            warnings.append(
+                {
+                    "type": "replacement_glyph",
+                    "line": line_no,
+                    "excerpt": excerpt,
+                }
+            )
+    return warnings
+
+
+def _markdown_metrics(md: str) -> dict[str, Any]:
     tables, table_rows, table_issues = _table_counts(md)
+    quality_warnings = _quality_warnings(md)
     return {
         "chars": len(md),
         "lines": md.count("\n") + (1 if md else 0),
@@ -146,6 +173,8 @@ def _markdown_metrics(md: str) -> dict[str, int]:
         "remaining_image_tokens": md.count("[[RHWP_IMAGE:"),
         "remaining_nested_tokens": md.count("[[NT:") + md.count("[[NT64:"),
         "unbalanced_fences": md.count("```") % 2,
+        "quality_warning_count": len(quality_warnings),
+        "quality_warnings": quality_warnings,
     }
 
 
@@ -225,6 +254,14 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
                 for r in results
             ),
             "unbalanced_fences": sum(r["unbalanced_fences"] for r in results),
+            "quality_warning_count": sum(r["quality_warning_count"] for r in results),
+            "quality_warnings_by_type": dict(
+                Counter(
+                    warning["type"]
+                    for r in results
+                    for warning in r["quality_warnings"]
+                )
+            ),
         },
         "results": results,
         "output_dir": str(output_dir),
