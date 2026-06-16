@@ -49,6 +49,7 @@ def test_conversion_result_to_dict_is_json_serializable(monkeypatch):
     assert payload["profile"]["kind"] == "hwp"
     assert payload["quality_warnings"][0]["type"] == "postal_code_width"
     assert payload["error"] is None
+    assert payload["error_info"] is None
     assert json.loads(json.dumps(payload, ensure_ascii=False)) == payload
 
 
@@ -102,8 +103,35 @@ def test_convert_with_metadata_can_capture_errors():
     payload = result.to_dict()
     assert payload["markdown"] == ""
     assert payload["error"] == result.error
+    assert payload["error_info"] == {
+        "type": "unsupported_format",
+        "message": result.error,
+        "stage": "convert",
+        "retryable": False,
+    }
     assert payload["metrics"]["chars"] == 0
     assert json.loads(json.dumps(payload, ensure_ascii=False)) == payload
+
+
+def test_convert_with_metadata_marks_parse_failures_non_retryable(monkeypatch):
+    import md_converter as mc
+    from md_converter import MdConverter
+
+    def fail_hwp_parse(data: bytes):
+        raise ValueError("broken hwp")
+
+    monkeypatch.setattr(mc, "_hwp5_parse", fail_hwp_parse)
+
+    result = MdConverter().convert_with_metadata(b"bad hwp", suffix=".hwp", raise_errors=False)
+    payload = result.to_dict()
+
+    assert payload["error"] == "broken hwp"
+    assert payload["error_info"] == {
+        "type": "parse_failed",
+        "message": "broken hwp",
+        "stage": "convert",
+        "retryable": False,
+    }
 
 
 def test_convert_with_metadata_includes_quality_warnings(monkeypatch):
