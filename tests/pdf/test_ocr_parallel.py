@@ -4,6 +4,30 @@ from __future__ import annotations
 import time
 
 from md_converter.pdf._pdf import _ocr_pages
+from md_converter.pdf._ocr import is_scanned_page
+
+
+class _FakePage:
+    width = 100
+    height = 100
+
+    def __init__(self, chars, images):
+        self.chars = chars
+        self.images = images
+
+    def extract_text(self, **kwargs):
+        raise AssertionError("is_scanned_page should not build a text map")
+
+
+def test_is_scanned_page_uses_chars_without_extract_text():
+    chars = [{"text": "가"} for _ in range(30)]
+    page = _FakePage(chars=chars, images=[{"x0": 0, "x1": 100, "y0": 0, "y1": 100}])
+    assert is_scanned_page(page) is False
+
+
+def test_is_scanned_page_detects_full_page_image_without_text():
+    page = _FakePage(chars=[], images=[{"x0": 0, "x1": 90, "y0": 0, "y1": 90}])
+    assert is_scanned_page(page) is True
 
 
 def test_ocr_pages_deterministic_parallel_vs_sequential():
