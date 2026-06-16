@@ -119,6 +119,30 @@ def test_parse_scanned_pdf_order_and_parallel_equiv(monkeypatch):
     assert md4 == md1                                       # parallel == sequential output
 
 
+def test_parse_scanned_pdf_without_llm_skips_prerender(monkeypatch):
+    import io
+    import pytest
+    pytest.importorskip("fitz")
+    import pdfplumber
+    from md_converter.pdf import parse
+    import md_converter.pdf._pdf as pdfmod
+    from md_converter.pdf._ocr import is_scanned_page
+
+    data = _make_scanned_pdf(1)
+    with pdfplumber.open(io.BytesIO(data)) as pdf:
+        if not is_scanned_page(pdf.pages[0]):
+            pytest.skip("fitz-built PDF not detected as scanned by pdfplumber")
+
+    def fail_render(*args, **kwargs):
+        raise AssertionError("scanned pages should not render without an LLM")
+
+    monkeypatch.setattr(pdfmod, "render_bbox_to_png", fail_render)
+    monkeypatch.setattr(pdfmod, "_ocr_one", lambda png, idx, data, llm: f"png={png!r};page={idx}")
+
+    md, _ = parse(data, llm=None, max_ocr_workers=1)
+    assert "png=b'';page=0" in md
+
+
 def test_mdconverter_passes_ocr_workers(monkeypatch):
     import md_converter as mc
     from md_converter import MdConverter
