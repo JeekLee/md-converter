@@ -105,6 +105,7 @@ class ConversionResult:
     llm_used: bool
     source: SourceMetadata
     converter: ConverterMetadata
+    ocr_failed_pages: list[dict[str, object]]
     error: str | None = None
     error_info: ErrorInfo | None = None
 
@@ -121,6 +122,8 @@ class ConversionResult:
             "llm_used": self.llm_used,
             "source": self.source.to_dict(),
             "converter": self.converter.to_dict(),
+            "ocr_failed_page_count": len(self.ocr_failed_pages),
+            "ocr_failed_pages": list(self.ocr_failed_pages),
             "error": self.error,
             "error_info": self.error_info.to_dict() if self.error_info else None,
         }

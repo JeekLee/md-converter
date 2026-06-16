@@ -83,6 +83,8 @@ result = converter.convert_with_metadata(
 )
 if result.error is None:
     save_markdown(result.markdown, metadata=result.to_dict())
+    if result.ocr_failed_pages:
+        queue_for_review(result.to_dict())
 elif result.error_info and result.error_info.retryable:
     retry_later(result.to_dict())
 else:
