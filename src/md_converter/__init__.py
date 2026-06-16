@@ -35,6 +35,7 @@ from .metadata import (
 )
 from .nested_tables import extract_nested_tables
 from .pdf import parse as _pdf_parse
+from .pdf import parse_with_metadata as _pdf_parse_with_metadata
 from .pdf import profile_pdf
 from .s3 import S3Config, put_object
 
@@ -113,7 +114,7 @@ class MdConverter:
         try:
             data, ext = self._read_source(source, suffix)
             profile = self.profile(data, ext)
-            md = self._convert_data(data, ext)
+            md, ocr_failed_pages = self._convert_data_with_metadata(data, ext)
             return ConversionResult(
                 markdown=md,
                 suffix=ext.lower(),
@@ -126,6 +127,7 @@ class MdConverter:
                 llm_used=self._llm is not None and profile.needs_ocr,
                 source=source_meta,
                 converter=converter_meta,
+                ocr_failed_pages=ocr_failed_pages,
             )
         except Exception as exc:
             if raise_errors:
@@ -144,6 +146,7 @@ class MdConverter:
                 converter=converter_meta,
                 error=str(exc),
                 error_info=self._error_info(exc, ext),
+                ocr_failed_pages=[],
             )
 
     def profile(
@@ -188,6 +191,25 @@ class MdConverter:
         md = extract_nested_tables(md)
 
         return md
+
+    def _convert_data_with_metadata(
+        self,
+        data: bytes,
+        ext: str,
+    ) -> tuple[str, list[dict[str, object]]]:
+        if ext.lower() != ".pdf":
+            return self._convert_data(data, ext), []
+
+        parsed = _pdf_parse_with_metadata(
+            data,
+            llm=self._llm,
+            max_ocr_workers=self._ocr_workers,
+        )
+        md = self._process_diagram_images(parsed.markdown, parsed.images)
+        md = self._process_images(md, parsed.images)
+        md = self._process_drawings(md)
+        md = extract_nested_tables(md)
+        return md, list(parsed.ocr_failed_pages)
 
     def _error_info(self, exc: Exception, ext: str) -> ErrorInfo:
         message = str(exc)

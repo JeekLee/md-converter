@@ -4,6 +4,7 @@ from __future__ import annotations
 import io
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from .._common import ImageItem
@@ -27,6 +28,18 @@ if TYPE_CHECKING:
     from ..llm import LlmConfig
 
 _PAGE_NUM_RE = re.compile(r"(?m)^\s*(?:-\s*)?\d+\s*(?:-\s*)?$")
+
+
+@dataclass
+class OcrPageResults(dict[int, str]):
+    failed_pages: list[dict[str, object]] = field(default_factory=list)
+
+
+@dataclass
+class PdfParseResult:
+    markdown: str
+    images: list[ImageItem]
+    ocr_failed_pages: list[dict[str, object]] = field(default_factory=list)
 
 
 def _strip_page_numbers(text: str) -> str:
@@ -209,7 +222,7 @@ def _ocr_pages(
     llm: "LlmConfig | None",
     max_workers: int | None,
     ocr_fn: "Callable[[bytes, int], str] | None" = None,
-) -> dict[int, str]:
+) -> OcrPageResults:
     """OCR pre-rendered scanned pages, concurrently when max_workers >= 2.
 
     scanned: list[(page_idx, png_bytes)].
@@ -217,33 +230,52 @@ def _ocr_pages(
     Returns {page_idx: text}. Per-page failures are isolated to "".
     """
     if not scanned:
-        return {}
+        return OcrPageResults()
     fn = ocr_fn or (lambda png, idx: _ocr_one(png, idx, data, llm))
 
     if max_workers is None or max_workers <= 1 or len(scanned) == 1:
-        out: dict[int, str] = {}
+        out = OcrPageResults()
         for idx, png in scanned:
             try:
                 out[idx] = fn(png, idx)
-            except Exception:
+                if not out[idx].strip():
+                    out.failed_pages.append(
+                        {"page": idx, "stage": "ocr", "message": "empty OCR result"}
+                    )
+            except Exception as exc:
                 out[idx] = ""
+                out.failed_pages.append(
+                    {"page": idx, "stage": "ocr", "message": str(exc)}
+                )
         return out
 
     workers = min(max_workers, len(scanned))
-    results: dict[int, str] = {}
+    results = OcrPageResults()
     with ThreadPoolExecutor(max_workers=workers) as ex:
         future_to_idx = {ex.submit(fn, png, idx): idx for idx, png in scanned}
         for fut in as_completed(future_to_idx):
             idx = future_to_idx[fut]
             try:
                 results[idx] = fut.result()
-            except Exception:
+                if not results[idx].strip():
+                    results.failed_pages.append(
+                        {"page": idx, "stage": "ocr", "message": "empty OCR result"}
+                    )
+            except Exception as exc:
                 results[idx] = ""
+                results.failed_pages.append(
+                    {"page": idx, "stage": "ocr", "message": str(exc)}
+                )
+    results.failed_pages.sort(key=lambda failure: int(failure["page"]))
     return results
 
 
-def parse(data: bytes, llm: "LlmConfig | None" = None, max_ocr_workers: int = 4) -> tuple[str, list[ImageItem]]:
-    """Parse a PDF and return (markdown_string, image_items).
+def parse_with_metadata(
+    data: bytes,
+    llm: "LlmConfig | None" = None,
+    max_ocr_workers: int = 4,
+) -> PdfParseResult:
+    """Parse a PDF and return Markdown, images, and OCR page failures.
 
     Requires ``pdfplumber`` and ``pypdf`` (``pip install 'md-converter[pdf]'``).
 
@@ -356,4 +388,14 @@ def parse(data: bytes, llm: "LlmConfig | None" = None, max_ocr_workers: int = 4)
 
     md = "\n\n".join(parts)
     md = merge_overflow_tables(md)
-    return md.strip(), all_images
+    return PdfParseResult(
+        markdown=md.strip(),
+        images=all_images,
+        ocr_failed_pages=list(ocr_by_idx.failed_pages),
+    )
+
+
+def parse(data: bytes, llm: "LlmConfig | None" = None, max_ocr_workers: int = 4) -> tuple[str, list[ImageItem]]:
+    """Parse a PDF and return (markdown_string, image_items)."""
+    result = parse_with_metadata(data, llm=llm, max_ocr_workers=max_ocr_workers)
+    return result.markdown, result.images

@@ -58,6 +58,9 @@ def test_ocr_pages_failure_isolated():
 
     res = _ocr_pages([(0, b""), (1, b""), (2, b"")], b"", None, 4, ocr_fn=fake)
     assert res == {0: "T0", 1: "", 2: "T2"}
+    assert res.failed_pages == [
+        {"page": 1, "stage": "ocr", "message": "boom"}
+    ]
 
 
 def test_ocr_pages_failure_isolated_sequential():
@@ -68,6 +71,18 @@ def test_ocr_pages_failure_isolated_sequential():
 
     res = _ocr_pages([(0, b""), (1, b"")], b"", None, 1, ocr_fn=fake)
     assert res == {0: "", 1: "ok"}
+    assert res.failed_pages == [
+        {"page": 0, "stage": "ocr", "message": "boom"}
+    ]
+
+
+def test_ocr_pages_empty_result_recorded_as_failure():
+    res = _ocr_pages([(0, b""), (1, b"")], b"", None, 2, ocr_fn=lambda png, idx: "")
+    assert res == {0: "", 1: ""}
+    assert res.failed_pages == [
+        {"page": 0, "stage": "ocr", "message": "empty OCR result"},
+        {"page": 1, "stage": "ocr", "message": "empty OCR result"},
+    ]
 
 
 def test_ocr_pages_empty():

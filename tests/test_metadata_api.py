@@ -134,6 +134,43 @@ def test_convert_with_metadata_marks_parse_failures_non_retryable(monkeypatch):
     }
 
 
+def test_convert_with_metadata_includes_pdf_ocr_failures(monkeypatch):
+    import md_converter as mc
+    from md_converter import MdConverter
+    from md_converter.metadata import DocumentProfile
+    from md_converter.pdf._pdf import PdfParseResult
+
+    def fake_pdf_parse_with_metadata(data, llm=None, max_ocr_workers=4):
+        return PdfParseResult(
+            markdown="OCR page 0",
+            images=[],
+            ocr_failed_pages=[
+                {"page": 1, "stage": "ocr", "message": "timed out"}
+            ],
+        )
+
+    monkeypatch.setattr(mc, "_pdf_parse_with_metadata", fake_pdf_parse_with_metadata)
+    monkeypatch.setattr(
+        mc,
+        "profile_pdf",
+        lambda data: DocumentProfile(
+            kind="pdf",
+            page_count=2,
+            text_page_count=0,
+            scanned_page_count=2,
+            needs_ocr=True,
+        ),
+    )
+
+    result = MdConverter().convert_with_metadata(b"%PDF fake", suffix=".pdf")
+    payload = result.to_dict()
+
+    assert payload["ocr_failed_page_count"] == 1
+    assert payload["ocr_failed_pages"] == [
+        {"page": 1, "stage": "ocr", "message": "timed out"}
+    ]
+
+
 def test_convert_with_metadata_includes_quality_warnings(monkeypatch):
     import md_converter as mc
     from md_converter import MdConverter
