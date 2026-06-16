@@ -277,12 +277,15 @@ def parse(data: bytes, llm: "LlmConfig | None" = None, max_ocr_workers: int = 4)
 
             # ── Scanned page: render now (main thread; fitz isn't thread-safe) ──
             if is_scanned_page(page):
-                try:
-                    png = render_bbox_to_png(data, page_idx, (0, 0, page.width, page.height))
-                    scanned.append((page_idx, png))
-                except Exception as exc:
-                    import sys
-                    sys.stderr.write(f"  scanned render failed (page {page_idx}): {exc}\n")
+                if llm is None:
+                    scanned.append((page_idx, b""))
+                else:
+                    try:
+                        png = render_bbox_to_png(data, page_idx, (0, 0, page.width, page.height))
+                        scanned.append((page_idx, png))
+                    except Exception as exc:
+                        import sys
+                        sys.stderr.write(f"  scanned render failed (page {page_idx}): {exc}\n")
                 continue
 
             # ── Normal page: extract embedded images ──────────────────────────
