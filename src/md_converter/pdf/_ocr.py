@@ -6,9 +6,13 @@ import io
 
 def is_scanned_page(plumber_page: object, min_text_chars: int = 30) -> bool:
     """Return True if the page has no usable text layer but has a full-page image."""
-    text = plumber_page.extract_text(x_tolerance=3, y_tolerance=3) or ""
-    if len(text.replace(" ", "").replace("\n", "")) >= min_text_chars:
-        return False
+    text_chars = 0
+    for char in getattr(plumber_page, "chars", []):
+        if str(char.get("text", "")).strip():
+            text_chars += 1
+            if text_chars >= min_text_chars:
+                return False
+
     pw, ph = plumber_page.width, plumber_page.height
     for img in plumber_page.images:
         img_w = float(img.get("x1", 0) - img.get("x0", 0))
