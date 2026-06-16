@@ -1,6 +1,7 @@
 """HWP5 table: records → GFM conversion."""
 from __future__ import annotations
 
+from ...nested_tables import serialize_nested_table
 from .._common import _escape_cell
 
 
@@ -10,7 +11,7 @@ def _escape_cell_for_table(s: str) -> str:
     Mirrors hwpx/_table_utils._escape_cell_for_table so a nested-table marker
     embedded in a cell survives for extract_nested_tables() to parse.
     """
-    if "[[NT:" in s:
+    if "[[NT:" in s or "[[NT64:" in s:
         return s
     return _escape_cell(s)
 
@@ -34,9 +35,7 @@ def _serialize_nt(rows: list[list[str]]) -> str:
 
     Returns "" when the table has no non-blank content.
     """
-    if not any(cell.strip() for row in rows for cell in row):
-        return ""
-    return "[[NT:" + ";".join("|".join(row) for row in rows) + "]]"
+    return serialize_nested_table(rows)
 
 
 def _serialize_flat(rows: list[list[str]]) -> str:

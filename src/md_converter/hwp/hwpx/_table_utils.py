@@ -4,6 +4,7 @@ from __future__ import annotations
 from xml.etree import ElementTree as ET
 
 from .._common import _escape_cell
+from ...nested_tables import serialize_nested_table
 from ._xml import _para_text, _q
 
 
@@ -48,9 +49,10 @@ def _cell_text(tc: ET.Element) -> str:
         if tbl is not None:
             rows = []
             for tr in tbl.findall(_q("tr")):
-                row = "|".join(_cell_plain_text(tc2) for tc2 in tr.findall(_q("tc")))
-                rows.append(row)
-            parts.append("[[NT:" + ";".join(rows) + "]]")
+                rows.append([_cell_plain_text(tc2) for tc2 in tr.findall(_q("tc"))])
+            marker = serialize_nested_table(rows)
+            if marker:
+                parts.append(marker)
         else:
             t = _para_text(p).strip()
             if t:
@@ -60,7 +62,7 @@ def _cell_text(tc: ET.Element) -> str:
 
 def _escape_cell_for_table(s: str) -> str:
     """Escape | for GFM, but leave [[NT:...]] markers intact."""
-    if "[[NT:" in s:
+    if "[[NT:" in s or "[[NT64:" in s:
         return s
     return _escape_cell(s)
 

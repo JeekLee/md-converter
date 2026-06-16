@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import re
 
+from ..nested_tables import serialize_nested_table
+
 
 # ── raw cell → GFM cell text ──────────────────────────────────────────────────
 
@@ -57,7 +59,7 @@ def serialize_nt(rows: list[list[str | None]]) -> str:
     """
     if not any((c or "").strip() for row in rows for c in row):
         return ""
-    return "[[NT:" + ";".join("|".join(_clean_cell(c) for c in row) for row in rows) + "]]"
+    return serialize_nested_table([[_clean_cell(c) for c in row] for row in rows])
 
 
 def bbox_in_cell(
@@ -84,7 +86,7 @@ def bbox_near_equal(a, b, margin: float = 3.0) -> bool:
 
 def _escape_cell_for_table(s: str | None) -> str:
     """Leave [[NT:...]] marker cells intact (so the marker survives); escape others."""
-    if s is not None and "[[NT:" in s:
+    if s is not None and ("[[NT:" in s or "[[NT64:" in s):
         return s
     return _cell_text(s)
 

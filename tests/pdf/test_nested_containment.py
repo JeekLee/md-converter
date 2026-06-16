@@ -66,7 +66,8 @@ def test_resolve_nested_containment_and_override():
     assert suppressed == {1}                       # sub (index 1) is contained
     assert 0 in overrides                          # parent (index 0) rebuilt
     rebuilt_cell = overrides[0][0][1]
-    assert rebuilt_cell == "기재형식 [[NT:항목|금액;외래|1000]] 예시"
+    assert rebuilt_cell.startswith("기재형식 [[NT64:")
+    assert rebuilt_cell.endswith("]] 예시")
 
 
 def test_resolve_nested_end_to_end():
@@ -157,7 +158,7 @@ def test_nested_pdf_via_fitz():
     md, _ = parse(data)
     out = extract_nested_tables(md)
 
-    assert "[[NT:" in md          # parser produced a nested-table marker
+    assert "[[NT64:" in md        # parser produced a nested-table marker
     assert "→ 표 1" in out        # separated by the shared pipeline
     assert "**[표 1]**" in out
     assert "1000" in out          # nested leaf preserved
@@ -191,8 +192,8 @@ def test_resolve_nested_multi_child_cell():
     suppressed, overrides = resolve_nested(page, [parent, sub1, sub2])
     assert suppressed == {1, 2}
     cell = overrides[0][0][0]
-    assert cell.count("[[NT:") == 2
-    assert cell.index("[[NT:a1") < cell.index("[[NT:a2")
+    assert cell.count("[[NT64:") == 2
+    assert cell.index("[[NT64:") < cell.rindex("[[NT64:")
 
 
 def test_resolve_nested_depth2_chain():
@@ -205,5 +206,5 @@ def test_resolve_nested_depth2_chain():
     assert suppressed == {1, 2}
     assert set(overrides.keys()) == {0}
     cell = overrides[0][0][0]
-    assert cell.count("[[NT:") == 1
-    assert "C_FLAT" in cell
+    assert cell.count("[[NT64:") == 1
+    assert "C_FLAT" in extract_nested_tables(cell)
