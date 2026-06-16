@@ -166,3 +166,15 @@ Used for: drawing/diagram → Mermaid conversion and scanned-PDF OCR. **Not** us
 | `secret_key` | `str` | — | AWS / MinIO secret key |
 | `prefix` | `str` | `""` | Optional key prefix |
 | `region` | `str` | `"us-east-1"` | AWS region |
+
+## Development benchmark
+
+When `clic-minio` is available locally, run the fixed 4-pair / 8-document
+benchmark:
+
+```bash
+uv run python scripts/benchmark_clic_minio.py
+```
+
+It reports conversion-time medians and Markdown quality counters, and writes
+converted Markdown files under `/tmp/md-converter-clic-bench/latest`.
