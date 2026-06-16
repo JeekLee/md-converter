@@ -14,6 +14,15 @@ class DocumentProfile:
     scanned_page_count: int | None = None
     needs_ocr: bool = False
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "kind": self.kind,
+            "page_count": self.page_count,
+            "text_page_count": self.text_page_count,
+            "scanned_page_count": self.scanned_page_count,
+            "needs_ocr": self.needs_ocr,
+        }
+
 
 @dataclass(frozen=True)
 class MarkdownMetrics:
@@ -25,6 +34,18 @@ class MarkdownMetrics:
     remaining_image_tokens: int
     remaining_nested_tokens: int
     unbalanced_fences: int
+
+    def to_dict(self) -> dict[str, int]:
+        return {
+            "chars": self.chars,
+            "lines": self.lines,
+            "tables": self.tables,
+            "table_rows": self.table_rows,
+            "table_issues": self.table_issues,
+            "remaining_image_tokens": self.remaining_image_tokens,
+            "remaining_nested_tokens": self.remaining_nested_tokens,
+            "unbalanced_fences": self.unbalanced_fences,
+        }
 
 
 @dataclass(frozen=True)
@@ -39,6 +60,20 @@ class ConversionResult:
     profile: DocumentProfile
     llm_used: bool
     error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "markdown": self.markdown,
+            "suffix": self.suffix,
+            "bytes": self.bytes,
+            "sha256": self.sha256,
+            "runtime_s": self.runtime_s,
+            "metrics": self.metrics.to_dict(),
+            "quality_warnings": list(self.quality_warnings),
+            "profile": self.profile.to_dict(),
+            "llm_used": self.llm_used,
+            "error": self.error,
+        }
 
 
 def table_counts(md: str) -> tuple[int, int, int]:

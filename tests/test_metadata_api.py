@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 
 
 def test_convert_with_metadata_returns_crawler_friendly_result(monkeypatch):
@@ -30,6 +31,27 @@ def test_convert_with_metadata_returns_crawler_friendly_result(monkeypatch):
     assert result.profile.page_count is None
 
 
+def test_conversion_result_to_dict_is_json_serializable(monkeypatch):
+    import md_converter as mc
+    from md_converter import MdConverter
+
+    def fake_hwp_parse(data: bytes):
+        return "우 3013\n\n| A | B |\n| --- | --- |\n| 1 | 2 |", []
+
+    monkeypatch.setattr(mc, "_hwp5_parse", fake_hwp_parse)
+
+    result = MdConverter().convert_with_metadata(b"fake hwp", suffix=".hwp")
+    payload = result.to_dict()
+
+    assert payload["markdown"] == result.markdown
+    assert payload["suffix"] == ".hwp"
+    assert payload["metrics"]["tables"] == 1
+    assert payload["profile"]["kind"] == "hwp"
+    assert payload["quality_warnings"][0]["type"] == "postal_code_width"
+    assert payload["error"] is None
+    assert json.loads(json.dumps(payload, ensure_ascii=False)) == payload
+
+
 def test_convert_with_metadata_can_capture_errors():
     from md_converter import MdConverter
 
@@ -41,6 +63,12 @@ def test_convert_with_metadata_can_capture_errors():
     assert "Unsupported format" in result.error
     assert result.metrics.chars == 0
     assert result.quality_warnings == []
+
+    payload = result.to_dict()
+    assert payload["markdown"] == ""
+    assert payload["error"] == result.error
+    assert payload["metrics"]["chars"] == 0
+    assert json.loads(json.dumps(payload, ensure_ascii=False)) == payload
 
 
 def test_convert_with_metadata_includes_quality_warnings(monkeypatch):

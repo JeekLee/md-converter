@@ -75,13 +75,7 @@ if profile.needs_ocr:
 
 result = converter.convert_with_metadata(raw_bytes, suffix=".pdf", raise_errors=False)
 if result.error is None:
-    save_markdown(
-        result.markdown,
-        sha256=result.sha256,
-        metrics=result.metrics,
-        quality_warnings=result.quality_warnings,
-        profile=result.profile,
-    )
+    save_markdown(result.markdown, metadata=result.to_dict())
 ```
 
 ## Nested tables
