@@ -139,25 +139,38 @@ def _table_counts(md: str) -> tuple[int, int, int]:
 def _quality_warnings(md: str) -> list[dict[str, Any]]:
     warnings: list[dict[str, Any]] = []
     postal_code = re.compile(r"\b우\s+(\d+)\b")
+    incomplete_date = re.compile(r"\b\d{4}\.\s*\d{1,2}\.(?!\s*\d)")
+    suspicious_doc_no = re.compile(r"[가-힣A-Za-z]+-\d*[A-Za-z]\d*")
+    email_like = re.compile(r"\b[\w.+-]+@[\w-]+(?:\.[\w-]+)*\b")
+    suspicious_admin_locations = ("(여진동)",)
+
+    def add_warning(warning_type: str, line_no: int, excerpt: str) -> None:
+        warnings.append(
+            {
+                "type": warning_type,
+                "line": line_no,
+                "excerpt": excerpt,
+            }
+        )
+
     for line_no, line in enumerate(md.splitlines(), start=1):
         excerpt = line.strip()
         for match in postal_code.finditer(line):
             if len(match.group(1)) < 5:
-                warnings.append(
-                    {
-                        "type": "postal_code_width",
-                        "line": line_no,
-                        "excerpt": excerpt,
-                    }
-                )
+                add_warning("postal_code_width", line_no, excerpt)
+        if incomplete_date.search(line):
+            add_warning("date_incomplete", line_no, excerpt)
+        if suspicious_doc_no.search(line):
+            add_warning("document_number_suspicious", line_no, excerpt)
+        for match in email_like.finditer(line):
+            domain = match.group(0).split("@", 1)[1]
+            if "." not in domain:
+                add_warning("email_suspicious", line_no, excerpt)
+                break
+        if any(location in line for location in suspicious_admin_locations):
+            add_warning("admin_location_suspicious", line_no, excerpt)
         if "�" in line or "□" in line:
-            warnings.append(
-                {
-                    "type": "replacement_glyph",
-                    "line": line_no,
-                    "excerpt": excerpt,
-                }
-            )
+            add_warning("replacement_glyph", line_no, excerpt)
     return warnings
 
 
