@@ -125,8 +125,24 @@ def _header_cells(table_md: str) -> list[str]:
     return [c.strip() for c in first.split("|")[1:-1]]
 
 
+def _is_separator_row(line: str) -> bool:
+    cells = [c.strip() for c in line.split("|")[1:-1]]
+    return bool(cells) and all(c and set(c) <= {"-", ":"} for c in cells)
+
+
+def _is_empty_table_block(block: list[str]) -> bool:
+    for line in block:
+        if _is_separator_row(line):
+            continue
+        if any(c.strip() for c in line.split("|")[1:-1]):
+            return False
+    return True
+
+
 def _clean_table_block(block: list[str]) -> list[str]:
     """Remove duplicate sub-header rows and merge wrapped cell lines."""
+    if _is_empty_table_block(block):
+        return []
     if len(block) < 3:
         return list(block)
     sub_hdr = block[2].strip()
