@@ -31,6 +31,7 @@ def test_quality_warnings_accept_five_or_six_digit_postal_code():
     benchmark = _load_benchmark_module()
     assert benchmark._quality_warnings("우 30113") == []
     assert benchmark._quality_warnings("우 110793") == []
+    assert benchmark._quality_warnings("우 427-721 경기도 과천시 중앙동 1") == []
 
 
 def test_quality_warnings_flag_replacement_glyphs():
@@ -70,6 +71,20 @@ def test_quality_warnings_flag_suspicious_document_number():
             "excerpt": "보험급여과-12O3",
         }
     ]
+
+
+def test_quality_warnings_accept_english_hyphenated_citations():
+    benchmark = _load_benchmark_module()
+    text = "\n".join(
+        [
+            "veno-occlusive disease high risk",
+            "Gastroenterology. 2003 May;124(5):1277-91",
+            "McGraw-Hill. p311-312",
+            "post-endoscopic retrograde cholangiopancreatography",
+        ]
+    )
+
+    assert benchmark._quality_warnings(text) == []
 
 
 def test_quality_warnings_flag_suspicious_email():

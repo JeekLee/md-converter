@@ -174,9 +174,9 @@ def markdown_metrics(md: str) -> MarkdownMetrics:
 
 def quality_warnings(md: str) -> list[dict[str, Any]]:
     warnings: list[dict[str, Any]] = []
-    postal_code = re.compile(r"\b우\s+(\d+)\b")
+    postal_code = re.compile(r"\b우\s+(\d{1,6})(?:-(\d{1,6}))?\b")
     incomplete_date = re.compile(r"\b\d{4}\.\s*\d{1,2}\.(?!\s*\d)")
-    suspicious_doc_no = re.compile(r"[가-힣A-Za-z]+-\d*[A-Za-z]\d*")
+    suspicious_doc_no = re.compile(r"[가-힣][가-힣A-Za-z]*-\d*[A-Za-z]\d*")
     email_like = re.compile(r"\b[\w.+-]+@[\w-]+(?:\.[\w-]+)*\b")
     suspicious_admin_locations = ("(여진동)",)
 
@@ -192,7 +192,10 @@ def quality_warnings(md: str) -> list[dict[str, Any]]:
     for line_no, line in enumerate(md.splitlines(), start=1):
         excerpt = line.strip()
         for match in postal_code.finditer(line):
-            if len(match.group(1)) < 5:
+            first, second = match.group(1), match.group(2)
+            valid_modern = second is None and len(first) in {5, 6}
+            valid_legacy = second is not None and len(first) == 3 and len(second) == 3
+            if not valid_modern and not valid_legacy:
                 add_warning("postal_code_width", line_no, excerpt)
         if incomplete_date.search(line):
             add_warning("date_incomplete", line_no, excerpt)
