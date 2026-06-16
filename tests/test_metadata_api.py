@@ -52,6 +52,41 @@ def test_conversion_result_to_dict_is_json_serializable(monkeypatch):
     assert json.loads(json.dumps(payload, ensure_ascii=False)) == payload
 
 
+def test_convert_with_metadata_includes_source_and_converter_metadata(monkeypatch):
+    import md_converter as mc
+    from md_converter import LlmConfig, MdConverter
+
+    def fake_hwp_parse(data: bytes):
+        return "본문", []
+
+    monkeypatch.setattr(mc, "_hwp5_parse", fake_hwp_parse)
+
+    converter = MdConverter(
+        llm=LlmConfig(url="http://llm.test/v1", api_key="test", model="vision-model"),
+        ocr_workers=2,
+    )
+    result = converter.convert_with_metadata(
+        b"fake hwp",
+        suffix=".hwp",
+        source_id="post-123/attachment-2",
+        source_url="https://example.test/notice/123",
+        source_name="첨부파일.hwp",
+    )
+    payload = result.to_dict()
+
+    assert payload["source"] == {
+        "id": "post-123/attachment-2",
+        "url": "https://example.test/notice/123",
+        "name": "첨부파일.hwp",
+    }
+    assert payload["converter"] == {
+        "ocr_workers": 2,
+        "llm_enabled": True,
+        "llm_model": "vision-model",
+    }
+    assert json.loads(json.dumps(payload, ensure_ascii=False)) == payload
+
+
 def test_convert_with_metadata_can_capture_errors():
     from md_converter import MdConverter
 
