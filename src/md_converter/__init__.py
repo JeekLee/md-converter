@@ -29,6 +29,7 @@ from .metadata import (
     ErrorInfo,
     MarkdownMetrics,
     SourceMetadata,
+    conversion_plan,
     markdown_metrics,
     profile_for_suffix,
     quality_warnings,

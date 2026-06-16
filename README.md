@@ -41,7 +41,7 @@ Extras: `hwp5` (olefile), `images` (Pillow, for BMP→PNG), `pdf` (pdfplumber + 
 `llm` is optional. It is only *invoked* for diagram/drawing → Mermaid conversion and for scanned-PDF OCR; plain text, plain tables, images, and nested tables need no LLM.
 
 ```python
-from md_converter import MdConverter, S3Config, LocalImages, LlmConfig
+from md_converter import MdConverter, S3Config, LocalImages, LlmConfig, conversion_plan
 
 converter = MdConverter(
     llm=LlmConfig(
@@ -70,8 +70,8 @@ converter = MdConverter(
 )
 
 profile = converter.profile(raw_bytes, suffix=".pdf")
-if profile.needs_ocr:
-    queue = "ocr"
+plan = conversion_plan(profile)
+queue = plan["queue"]
 
 result = converter.convert_with_metadata(
     raw_bytes,
