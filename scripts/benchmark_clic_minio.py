@@ -158,6 +158,17 @@ def _markdown_metrics(md: str) -> dict[str, Any]:
     }
 
 
+def _warning_counts(results: list[dict[str, Any]], key: str) -> dict[str, int]:
+    return dict(
+        Counter(
+            warning[key]
+            for result in results
+            for warning in result["quality_warnings"]
+            if key in warning
+        )
+    )
+
+
 def _normalize_for_similarity(md: str) -> str:
     md = re.sub(r"```.*?```", " ", md, flags=re.S)
     md = re.sub(r"[^0-9A-Za-z가-힣]+", " ", md).lower()
@@ -235,13 +246,8 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
             ),
             "unbalanced_fences": sum(r["unbalanced_fences"] for r in results),
             "quality_warning_count": sum(r["quality_warning_count"] for r in results),
-            "quality_warnings_by_type": dict(
-                Counter(
-                    warning["type"]
-                    for r in results
-                    for warning in r["quality_warnings"]
-                )
-            ),
+            "quality_warnings_by_type": _warning_counts(results, "type"),
+            "quality_warnings_by_severity": _warning_counts(results, "severity"),
         },
         "results": results,
         "output_dir": str(output_dir),
