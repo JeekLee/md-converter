@@ -97,19 +97,21 @@ def test_parse_scanned_pdf_order_and_parallel_equiv(monkeypatch):
 
 def test_mdconverter_passes_ocr_workers(monkeypatch):
     import md_converter as mc
-    from md_converter import MdConverter, LlmConfig
+    from md_converter import MdConverter
 
     captured = {}
 
     def fake_pdf_parse(data, llm=None, max_ocr_workers=4):
         captured["max_ocr_workers"] = max_ocr_workers
+        captured["llm"] = llm
         return "ok", []
 
     monkeypatch.setattr(mc, "_pdf_parse", fake_pdf_parse)
-    conv = MdConverter(llm=LlmConfig(url="x", api_key="x", model="x"), ocr_workers=7)
+    conv = MdConverter(ocr_workers=7)
     out = conv.convert(b"%PDF-1.4 fake", suffix=".pdf")
     assert out == "ok"
     assert captured["max_ocr_workers"] == 7
+    assert captured["llm"] is None
 
 
 def test_parse_mixed_text_and_scanned_pages_order(monkeypatch):
