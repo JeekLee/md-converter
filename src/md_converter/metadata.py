@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
@@ -118,6 +119,7 @@ class ConversionResult:
             "runtime_s": self.runtime_s,
             "metrics": self.metrics.to_dict(),
             "quality_warnings": list(self.quality_warnings),
+            "quality_warning_counts": quality_warning_counts(self.quality_warnings),
             "profile": self.profile.to_dict(),
             "llm_used": self.llm_used,
             "source": self.source.to_dict(),
@@ -127,6 +129,15 @@ class ConversionResult:
             "error": self.error,
             "error_info": self.error_info.to_dict() if self.error_info else None,
         }
+
+
+def quality_warning_counts(warnings: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    return {
+        "by_type": dict(Counter(warning["type"] for warning in warnings if "type" in warning)),
+        "by_severity": dict(
+            Counter(warning["severity"] for warning in warnings if "severity" in warning)
+        ),
+    }
 
 
 def table_counts(md: str) -> tuple[int, int, int]:

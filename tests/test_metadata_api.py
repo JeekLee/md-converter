@@ -48,6 +48,10 @@ def test_conversion_result_to_dict_is_json_serializable(monkeypatch):
     assert payload["metrics"]["tables"] == 1
     assert payload["profile"]["kind"] == "hwp"
     assert payload["quality_warnings"][0]["type"] == "postal_code_width"
+    assert payload["quality_warning_counts"] == {
+        "by_type": {"postal_code_width": 1},
+        "by_severity": {"medium": 1},
+    }
     assert payload["error"] is None
     assert payload["error_info"] is None
     assert json.loads(json.dumps(payload, ensure_ascii=False)) == payload
@@ -110,6 +114,10 @@ def test_convert_with_metadata_can_capture_errors():
         "retryable": False,
     }
     assert payload["metrics"]["chars"] == 0
+    assert payload["quality_warning_counts"] == {
+        "by_type": {},
+        "by_severity": {},
+    }
     assert json.loads(json.dumps(payload, ensure_ascii=False)) == payload
 
 

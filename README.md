@@ -82,13 +82,13 @@ result = converter.convert_with_metadata(
     source_name="첨부파일.pdf",
 )
 if result.error is None:
-    save_markdown(result.markdown, metadata=result.to_dict())
+    metadata = result.to_dict()
+    save_markdown(result.markdown, metadata=metadata)
     # Each quality warning includes type, severity, line, excerpt, and reason.
-    high_priority = [w for w in result.quality_warnings if w["severity"] == "high"]
-    if high_priority:
-        queue_for_review(result.to_dict())
+    if metadata["quality_warning_counts"]["by_severity"].get("high", 0):
+        queue_for_review(metadata)
     if result.ocr_failed_pages:
-        queue_for_review(result.to_dict())
+        queue_for_review(metadata)
 elif result.error_info and result.error_info.retryable:
     retry_later(result.to_dict())
 else:
